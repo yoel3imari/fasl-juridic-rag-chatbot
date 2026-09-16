@@ -11,6 +11,7 @@ from app.models.base import (
 )
 from app.models.conversation import Conversation, Message
 from app.models.document import Document, DocumentVersion
+from app.models.document_section import DocumentSection
 from app.models.draft import Draft, ReviewState
 from app.models.matter import Matter
 
@@ -19,6 +20,7 @@ __all__ = [
     "Base",
     "Conversation",
     "Document",
+    "DocumentSection",
     "DocumentVersion",
     "Draft",
     "Matter",

@@ -16,5 +16,6 @@ out/
 .DS_Store
 .idea/
 .vscode/
+.omo
 
 # Evidence is tracked; ignore nothing under .omo
