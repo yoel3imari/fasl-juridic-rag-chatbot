@@ -48,10 +48,12 @@ async def unhandled_exception(request: Request, exc: Exception) -> JSONResponse:
 from app.api.v1.chat import router as chat_router
 from app.api.v1.documents import router as documents_router
 from app.api.v1.library import router as library_router
+from app.api.v1.search import router as search_router
 
 app.include_router(library_router)
 app.include_router(documents_router)
 app.include_router(chat_router)
+app.include_router(search_router)
 
 
 @app.get("/health")

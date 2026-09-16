@@ -90,3 +90,57 @@ async def test_repository_enforces_matter_scope(session: AsyncSession):
 def test_engine_accessible():
     """Sanity: shared engine factory is available."""
     assert get_engine() is not None
+
+
+async def test_matter_b_never_sees_matter_a():
+    """Qdrant filter proof: both matters indexed in ONE store, B sees only B.
+
+    SYNTHETIC fixtures only — no real legal text.
+    """
+    from app.search import service as svc
+    from app.search.store import QdrantStore
+
+    svc.clear_search_cache()
+
+    class _FakeEmbedder:
+        async def embed(self, texts: list[str]) -> list[list[float]]:
+            return [[1.0, 0.0, 0.0, 0.0] for _ in texts]
+
+    store = QdrantStore(local_path=":memory:", dim=4)
+    for mid, tag in ((101, "alpha"), (202, "beta")):
+        store.upsert_evidence(
+            [
+                {
+                    "id": f"{tag}-sec",
+                    "vector": [1.0, 0.0, 0.0, 0.0],
+                    "matter_id": mid,
+                    "document_id": mid,
+                    "version_no": 1,
+                    "doc_type": "contract",
+                    "page": 1,
+                    "span": [0, 7],
+                    "faithful_ref": f"{tag}-sec",
+                    "text": f"clause confidentielle {tag} contrat",
+                }
+            ]
+        )
+
+    out_b = await svc.search_matter(
+        store=store,
+        embedder=_FakeEmbedder(),
+        matter_id=202,
+        query="clause confidentielle",
+        top_k=10,
+    )
+    assert out_b["matter"], "matter B must see its own chunk"
+    assert {h["matter_id"] for h in out_b["matter"]} == {202}
+    assert all("alpha" not in h["faithful_ref"] for h in out_b["matter"])
+
+    out_a = await svc.search_matter(
+        store=store,
+        embedder=_FakeEmbedder(),
+        matter_id=101,
+        query="clause confidentielle",
+        top_k=10,
+    )
+    assert {h["matter_id"] for h in out_a["matter"]} == {101}

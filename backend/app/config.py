@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     OCR_CONFIDENCE_THRESHOLD: float = 0.6
     CRISPEMBED_URL: str = "http://localhost:8080"
     QDRANT_EVIDENCE_COLLECTION: str = "matter_evidence"
+    QDRANT_AUTHORITY_COLLECTION: str = "legal_authorities"
+    QDRANT_LOCAL_PATH: str | None = None
+    EMBEDDING_DIM: int = 1024
     OCR_LANGUAGES: str = "ara+fra"
     OCR_TIMEOUT_SECONDS: float = 30.0
 
