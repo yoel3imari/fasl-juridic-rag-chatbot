@@ -147,10 +147,14 @@ class QdrantStore:
 
         Returns [{payload, relevance}] — ``relevance`` is a fusion score,
         NEVER an authority rank; callers must not label it as one.
+        Missing collections are created on demand (empty result), so an
+        unseeded domain reads as "no hits", never a 500; connection
+        failures still raise and map to 503/500 upstream.
         """
         from qdrant_client.hybrid.fusion import reciprocal_rank_fusion
         from qdrant_client.models import FieldCondition, Filter, MatchValue
 
+        self.ensure_collections()
         query_filter = None
         if matter_id is not None:
             query_filter = Filter(
