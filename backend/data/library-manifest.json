@@ -1,0 +1,22 @@
+{
+  "entries": [
+    {
+      "source": "Code du Travail",
+      "version": "2023",
+      "edition": "ar-general",
+      "file_path": "backend/data/seed/code_du_travail.pdf",
+      "pub_date": "2023-01-01",
+      "language": "ar",
+      "coverage_note": "Bulletin Officiel general edition (Arabic) is authoritative; seed pending curated PDF"
+    },
+    {
+      "source": "Code du Travail",
+      "version": "2023",
+      "edition": "fr-translation",
+      "file_path": "backend/data/seed/code_du_travail_fr.pdf",
+      "pub_date": "2023-01-01",
+      "language": "fr",
+      "coverage_note": "French edition is an official translation, not authoritative over the Arabic general edition"
+    }
+  ]
+}
