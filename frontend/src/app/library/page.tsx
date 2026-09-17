@@ -11,8 +11,8 @@ export default function LibraryPage() {
   useEffect(() => {
     libraryCoverage()
       .then((cov) => {
-        setEntries(cov.entries);
-        setGaps(cov.gaps);
+        setEntries(cov.titles ?? []);
+        setGaps(cov.gaps ?? []);
       })
       .catch((e) =>
         setError(e instanceof ApiError ? `${e.status}: ${e.message}` : "load failed"),
@@ -39,8 +39,11 @@ export default function LibraryPage() {
             {e.pub_date && <span> · pub {e.pub_date}</span>}
             {e.doc_date && <span> · doc {e.doc_date}</span>}
             {e.language && <span> · {e.language}</span>}
-            {e.chunk_count !== undefined && (
-              <span> · {e.chunk_count} passages</span>
+            {e.chunks !== undefined && (
+              <span> · {e.chunks} passages</span>
+            )}
+            {e.coverage_note && (
+              <p className="mt-1 text-xs text-neutral-500">{e.coverage_note}</p>
             )}
           </li>
         ))}

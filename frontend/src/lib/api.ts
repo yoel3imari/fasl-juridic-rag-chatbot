@@ -261,15 +261,19 @@ export interface CoverageEntry {
   source: string;
   version: string;
   edition: string;
-  pub_date?: string;
-  doc_date?: string;
+  pub_date?: string | null;
+  doc_date?: string | null;
+  hijri_date?: string | null;
   language?: string;
-  chunk_count?: number;
+  coverage_note?: string | null;
+  chunks?: number;
+  status?: string;
 }
 
 export async function libraryCoverage(): Promise<{
-  entries: CoverageEntry[];
+  titles: CoverageEntry[];
   gaps: string[];
+  library_version: string | null;
 }> {
   const res = await fetch(`${API_BASE}/api/v1/library/coverage`);
   if (!res.ok) throw new ApiError(res.status, await safeText(res));
