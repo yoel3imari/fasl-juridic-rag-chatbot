@@ -1,0 +1,36 @@
+{
+  "version": "v0-seed",
+  "note": "Definitional plain-language glossary only. These entries explain common labor-law terms in simple words; they are NOT quotations of any legal article and carry no article numbers, versions, or publication metadata.",
+  "entries": [
+    {
+      "term": "notice period",
+      "ar": "مدة الإشعار",
+      "plain_ar": "المدة التي يجب فيها على الطرف الذي يريد إنهاء العمل أن يخبر الطرف الآخر مسبقاً قبل التوقف عن العمل.",
+      "plain_fr": "La durée pendant laquelle la partie qui veut mettre fin au travail doit prévenir l'autre partie à l'avance."
+    },
+    {
+      "term": "abusive dismissal",
+      "ar": "فصل تعسفي",
+      "plain_ar": "إنهاء العمل من طرف المشغّل بدون سبب جدّي ومشروع، وهو ما قد يمنح الأجير حق المطالبة بالتعويض.",
+      "plain_fr": "Le fait pour l'employeur de mettre fin au travail sans motif sérieux et légitime, ce qui peut donner au salarié le droit de demander une indemnité."
+    },
+    {
+      "term": "compensation",
+      "ar": "التعويض",
+      "plain_ar": "مبلغ من المال يُدفع لتعويض ضرر أو حق مستحق، مثل الأجور المتأخرة أو التعويض عن الفصل.",
+      "plain_fr": "Une somme d'argent versée pour réparer un préjudice ou payer un droit dû, comme des salaires en retard ou une indemnité de licenciement."
+    },
+    {
+      "term": "employment contract",
+      "ar": "عقد الشغل",
+      "plain_ar": "اتفاق بين الأجير والمشغّل يحدد طبيعة العمل والأجر والحقوق والواجبات.",
+      "plain_fr": "Un accord entre le salarié et l'employeur qui fixe la nature du travail, le salaire, les droits et les obligations."
+    },
+    {
+      "term": "payslip",
+      "ar": "كشف الأجر",
+      "plain_ar": "وثيقة شهرية تبين الأجر الذي تقاضاه الأجير والاقتطاعات المطبقة عليه.",
+      "plain_fr": "Un document mensuel qui montre le salaire perçu par le salarié et les retenues appliquées."
+    }
+  ]
+}
