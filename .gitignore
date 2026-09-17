@@ -11,6 +11,8 @@ node_modules/
 .next/
 out/
 *.log
+frontend/test-results/
+frontend/playwright-report/
 
 # OS / editor
 .DS_Store
