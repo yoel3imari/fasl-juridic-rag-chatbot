@@ -1,5 +1,13 @@
 import type { Metadata } from "next";
+import { Noto_Sans_Arabic } from "next/font/google";
 import "./globals.css";
+import { Providers } from "./providers";
+
+const notoArabic = Noto_Sans_Arabic({
+  subsets: ["arabic", "latin"],
+  display: "swap",
+  variable: "--font-arabic",
+});
 
 export const metadata: Metadata = {
   title: "Moroccan Legal RAG",
@@ -12,8 +20,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="fr">
-      <body>{children}</body>
+    <html lang="ar" dir="rtl" suppressHydrationWarning>
+      <body
+        className={`${notoArabic.variable} font-arabic bg-background text-foreground antialiased`}
+      >
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }
