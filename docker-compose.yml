@@ -1,0 +1,66 @@
+# Local stack (task 11): fastapi :8000, nextjs :3000, qdrant :6333,
+# crispembed :8080. No PostgreSQL, Redis, Ollama, or auth — plan scope.
+name: fasl
+
+services:
+  qdrant:
+    build:
+      context: ./qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+  crispembed:
+    build:
+      context: ./crispembed
+    ports:
+      - "8080:8080"
+    volumes:
+      # Persist the 449MB bge-m3 GGUF across recreations (server cache dir).
+      - crispembed_models:/root/.cache/crispembed
+      - crispembed_models:/models
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 120s
+    restart: unless-stopped
+
+  fastapi:
+    build:
+      context: ./backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env.docker
+    environment:
+      QDRANT_URL: http://qdrant:6333
+      CRISPEMBED_URL: http://crispembed:8080
+    volumes:
+      - backend_data:/app/data
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      crispembed:
+        condition: service_healthy
+    restart: unless-stopped
+
+  nextjs:
+    build:
+      context: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    depends_on:
+      fastapi:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  qdrant_data:
+  crispembed_models:
+  backend_data:
