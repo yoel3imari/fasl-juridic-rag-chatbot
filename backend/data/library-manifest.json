@@ -17,6 +17,15 @@
       "pub_date": "2023-01-01",
       "language": "fr",
       "coverage_note": "French edition is an official translation, not authoritative over the Arabic general edition"
+    },
+    {
+      "source": "Code du Travail (Test Fixture)",
+      "version": "2023",
+      "edition": "ar-general",
+      "file_path": "backend/data/seed/code_du_travail_test_ar.txt",
+      "pub_date": "2023-01-01",
+      "language": "ar",
+      "coverage_note": "Pipeline verification fixture - not authoritative legal text"
     }
   ]
 }
