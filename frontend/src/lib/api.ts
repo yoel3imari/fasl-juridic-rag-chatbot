@@ -1,5 +1,5 @@
 /**
- * Backend API client (task 10).
+ * Backend API client.
  *
  * Contracts mirror the verified backend shapes:
  * - POST /api/v1/chat                 → SSE stream (citations → token* → done)
@@ -9,9 +9,10 @@
  * - POST /api/v1/matters/{id}/documents/upload (multipart)
  * - GET  /api/v1/library/coverage
  * - GET/POST /api/v1/search (domain: matter|authority|both, separate lists)
+ * - GET/POST /api/v1/matters (list/create)
  */
 
-const API_BASE =
+export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 export type Domain = "matter" | "authority";
@@ -47,7 +48,6 @@ export type SseEvent =
 
 /**
  * Parse one SSE `data:` payload line into a typed event.
- * Pure function — unit tested in citation-domain-badge + api tests.
  */
 export function parseSseLine(line: string): SseEvent | null {
   const trimmed = line.trim();
@@ -64,8 +64,7 @@ export function parseSseLine(line: string): SseEvent | null {
 }
 
 /**
- * Stream POST /api/v1/chat SSE events. Uses fetch + ReadableStream
- * (no EventSource — it cannot POST bodies). AbortController aborts cleanly.
+ * Stream POST /api/v1/chat SSE events. Uses fetch + ReadableStream.
  */
 export async function* streamChat(
   matterId: number,
@@ -123,7 +122,45 @@ async function safeText(res: Response): Promise<string> {
   }
 }
 
-/* ---------- REST helpers ---------- */
+/* ---------- Matter helpers ---------- */
+
+export interface Matter {
+  id: number;
+  title: string;
+  matter_type: string;
+  jurisdiction: string;
+  language: string;
+}
+
+export interface MatterCreateInput {
+  title: string;
+  matter_type?: string;
+  jurisdiction?: string;
+  language?: string;
+}
+
+export async function listMatters(): Promise<Matter[]> {
+  const res = await fetch(`${API_BASE}/api/v1/matters`);
+  if (!res.ok) throw new ApiError(res.status, await safeText(res));
+  return res.json() as Promise<Matter[]>;
+}
+
+export async function createMatter(input: MatterCreateInput): Promise<Matter> {
+  const res = await fetch(`${API_BASE}/api/v1/matters`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title: input.title,
+      matter_type: input.matter_type ?? "labor",
+      jurisdiction: input.jurisdiction ?? "casablanca",
+      language: input.language ?? "ar",
+    }),
+  });
+  if (!res.ok) throw new ApiError(res.status, await safeText(res));
+  return res.json() as Promise<Matter>;
+}
+
+/* ---------- Analysis helpers ---------- */
 
 export interface AnalysisContent {
   status: "complete" | "needs-documents";
@@ -164,6 +201,8 @@ export async function runAnalysis(matterId: number): Promise<AnalysisOut> {
   if (!res.ok) throw new ApiError(res.status, await safeText(res));
   return res.json() as Promise<AnalysisOut>;
 }
+
+/* ---------- Drafts helpers ---------- */
 
 export interface DraftOut {
   matter_id: number;
@@ -215,6 +254,22 @@ export async function lawyerReviewDraft(
   return res.json() as Promise<DraftOut>;
 }
 
+/* ---------- Upload helpers ---------- */
+
+export interface DocumentSection {
+  section_id: string;
+  parent_section_id: string | null;
+  title: string;
+  page_start: number;
+  page_end: number;
+  span_start: number;
+  span_end: number;
+  faithful_text: string;
+  normalized_text: string;
+  ocr_confidence: number | null;
+  needs_review: boolean;
+}
+
 export interface UploadOut {
   matter_id: number;
   document_id: number;
@@ -226,6 +281,7 @@ export interface UploadOut {
   blob_ref: string;
   indexed_count: number;
   error: string | null;
+  sections?: DocumentSection[];
 }
 
 export async function uploadDocument(
@@ -233,7 +289,6 @@ export async function uploadDocument(
   file: File,
   onProgress?: (loaded: number, total: number | null) => void,
 ): Promise<UploadOut> {
-  // XMLHttpRequest gives upload progress; fetch does not (no dup Body stream).
   return new Promise<UploadOut>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `${API_BASE}/api/v1/matters/${matterId}/documents/upload`);
@@ -257,6 +312,8 @@ export async function uploadDocument(
   });
 }
 
+/* ---------- Library & Search helpers ---------- */
+
 export interface CoverageEntry {
   source: string;
   version: string;
@@ -278,6 +335,42 @@ export async function libraryCoverage(): Promise<{
   const res = await fetch(`${API_BASE}/api/v1/library/coverage`);
   if (!res.ok) throw new ApiError(res.status, await safeText(res));
   return res.json();
+}
+
+export interface SearchResult {
+  matter?: Array<{
+    document_id: number;
+    doc_type?: string;
+    page: number;
+    span: [number, number];
+    text: string;
+    faithful_ref?: string;
+  }>;
+  authority?: Array<{
+    source: string;
+    version: string;
+    edition: string;
+    article_or_section: string;
+    text: string;
+  }>;
+}
+
+export async function searchAll(
+  query: string,
+  matterId?: number | null,
+  domain: "both" | "matter" | "authority" = "both",
+): Promise<SearchResult> {
+  const res = await fetch(`${API_BASE}/api/v1/search`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query,
+      domain,
+      matter_id: matterId ?? undefined,
+    }),
+  });
+  if (!res.ok) throw new ApiError(res.status, await safeText(res));
+  return res.json() as Promise<SearchResult>;
 }
 
 export function matterRefLabel(c: MatterCitation): string {
