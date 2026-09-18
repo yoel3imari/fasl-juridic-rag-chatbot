@@ -1,5 +1,8 @@
-# Local stack (task 11): fastapi :8000, nextjs :3000, qdrant :6333,
+# Dev-first base stack: fastapi :8000, nextjs :3000, qdrant :6333,
 # crispembed :8080. No PostgreSQL, Redis, Ollama, or auth — plan scope.
+# base=dev (dev targets, bind mounts, reload commands, develop.watch,
+# restart "no" for app services). prod via `-f docker-compose.prod.yml`
+# which !overrides volumes/commands on top of this base.
 name: fasl
 
 services:
@@ -19,7 +22,8 @@ services:
       - "8080:8080"
     volumes:
       # Persist the 449MB bge-m3 GGUF across recreations (server cache dir).
-      - crispembed_models:/root/.cache/crispembed
+      # Path must match the runtime user's HOME (/home/crispembed), not /root.
+      - crispembed_models:/home/crispembed/.cache/crispembed
       - crispembed_models:/models
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
@@ -32,6 +36,8 @@ services:
   fastapi:
     build:
       context: ./backend
+      target: dev
+    command: ["sh", "-c", "uv run alembic upgrade head && exec uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"]
     ports:
       - "8000:8000"
     env_file:
@@ -40,25 +46,49 @@ services:
       QDRANT_URL: http://qdrant:6333
       CRISPEMBED_URL: http://crispembed:8080
     volumes:
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
       - backend_data:/app/data
     depends_on:
       qdrant:
         condition: service_healthy
       crispembed:
         condition: service_healthy
-    restart: unless-stopped
+    restart: "no"
+    develop:
+      watch:
+        - path: ./backend/app
+          target: /app/app
+          action: sync+restart
+        - path: ./backend/alembic
+          target: /app/alembic
+          action: sync+restart
 
   nextjs:
     build:
       context: ./frontend
+      target: dev
+    command: ["npm", "run", "dev"]
     ports:
       - "3000:3000"
     environment:
+      WATCHPACK_POLLING: "true"
       NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
     depends_on:
       fastapi:
         condition: service_healthy
-    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    restart: "no"
+    develop:
+      watch:
+        - path: ./frontend
+          target: /app
+          action: sync
 
 volumes:
   qdrant_data:

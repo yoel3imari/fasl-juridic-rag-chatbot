@@ -1,0 +1,75 @@
+# Prod overlay: base=dev, prod via -f overlay.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.docker config
+# Base is dev-first (targets dev, --reload, bind mounts, develop.watch);
+# this file resets everything back to production. Ports/depends_on health
+# are inherited from base (not redefined).
+name: fasl
+
+services:
+  qdrant:
+    restart: !override unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  crispembed:
+    restart: !override unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    volumes: !override
+      # Single mount: XDG_CACHE_HOME=/models/cache + non-root user.
+      - crispembed_models:/models
+
+  fastapi:
+    build:
+      context: ./backend
+      target: prod
+    # No --reload in prod; migrate then serve.
+    command: !override ["sh", "-c", "uv run alembic upgrade head && exec uv run uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    # Drop dev bind mounts; keep only the data volume.
+    volumes: !override
+      - backend_data:/app/data
+    restart: !override unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    # Clear dev develop.watch so it never leaks into prod.
+    develop: !override {}
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      crispembed:
+        condition: service_healthy
+
+  nextjs:
+    build:
+      context: ./frontend
+      target: prod
+      args:
+        # NEXT_PUBLIC_* is baked at build time; runtime env alone is ignored.
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+    command: !override ["node", "server.js"]
+    # Drop dev bind mount + anon node_modules/.next volumes.
+    volumes: !override []
+    # Drop WATCHPACK_POLLING; keep only the public API URL.
+    environment: !override
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+    stdin_open: !override false
+    tty: !override false
+    restart: !override unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    develop: !override {}
+    depends_on:
+      fastapi:
+        condition: service_healthy
