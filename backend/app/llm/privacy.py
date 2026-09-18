@@ -9,7 +9,7 @@ from app.llm.errors import ConsentRequiredError, PrivacyViolationError
 logger = logging.getLogger(__name__)
 
 EXTERNAL_PROVIDERS: frozenset[str] = frozenset(
-    {"openai", "groq", "anthropic", "google"}
+    {"openai", "groq", "anthropic", "google", "openrouter"}
 )
 LOCAL_PROVIDERS: frozenset[str] = frozenset({"ollama"})
 

@@ -6,6 +6,10 @@ __pycache__/
 .env
 matters.db
 
+# TypeScript build artifacts
+*.tsbuildinfo
+frontend/tsconfig.tsbuildinfo
+
 # Node / Next.js
 node_modules/
 .next/
@@ -18,6 +22,4 @@ frontend/playwright-report/
 .DS_Store
 .idea/
 .vscode/
-.omo
-
-# Evidence is tracked; ignore nothing under .omo
+.omo/
