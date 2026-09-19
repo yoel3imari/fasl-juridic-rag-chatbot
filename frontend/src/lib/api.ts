@@ -44,7 +44,8 @@ export type SseEvent =
   | { type: "citations"; citations: Citation[] }
   | { type: "token"; text: string }
   | { type: "done"; not_found?: boolean }
-  | { type: "error"; code: string; detail: string };
+  | { type: "error"; code: string; detail: string }
+  | { type: "status"; stage: string; message: string };
 
 /**
  * Parse one SSE `data:` payload line into a typed event.
