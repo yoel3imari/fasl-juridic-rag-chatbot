@@ -45,3 +45,29 @@ def get_agent(
     agent = Agent(model_string)
     agent.model_name = model_string
     return agent
+
+
+def get_agent_with_tools(
+    provider: str | None = None,
+    model: str | None = None,
+    *,
+    store: Any,
+    embedder: Any,
+    matter_id: int,
+    top_k: int = 30,
+) -> Any:
+    """Build the chat agent with retrieval tools registered.
+
+    Wraps get_agent, then registers search_matter_tool /
+    search_authority_tool / search_both_tool (matter_id pre-filter bound)
+    via app.llm.tools.register_retrieval_tools. See tools.py for why the
+    chat route still drives a manual envelope loop around these tools.
+    """
+    from app.llm.tools import ToolContext, register_retrieval_tools
+
+    agent = get_agent(provider=provider, model=model)
+    register_retrieval_tools(
+        agent,
+        ToolContext(store=store, embedder=embedder, matter_id=matter_id, top_k=top_k),
+    )
+    return agent
