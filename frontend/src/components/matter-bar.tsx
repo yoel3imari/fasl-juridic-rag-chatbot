@@ -15,6 +15,8 @@ import {
   Briefcase,
 } from "lucide-react";
 import { listMatters, type Matter } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
+import { LanguageSwitcher } from "@/components/language-switcher";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -23,7 +25,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 
 export function MatterBar({
   matterId,
@@ -38,6 +39,7 @@ export function MatterBar({
 }) {
   const [matters, setMatters] = useState<Matter[]>([]);
   const { theme, setTheme } = useTheme();
+  const { t } = useI18n();
 
   const refresh = async () => {
     try {
@@ -67,7 +69,7 @@ export function MatterBar({
             <Scale className="h-4 w-4" />
           </div>
           <span className="text-base tracking-tight font-extrabold text-primary">
-            فَصْل
+            {t.common.appName}
           </span>
         </Link>
 
@@ -78,7 +80,7 @@ export function MatterBar({
             onValueChange={(val) => onSelect(val ? Number(val) : null)}
           >
             <SelectTrigger className="h-9 bg-card">
-              <SelectValue placeholder="اختر ملف قضية…" />
+              <SelectValue placeholder={t.nav.selectMatterPlaceholder} />
             </SelectTrigger>
             <SelectContent>
               {matters.map((m) => (
@@ -102,7 +104,7 @@ export function MatterBar({
           className="h-9 gap-1 text-xs font-semibold"
         >
           <Plus className="h-3.5 w-3.5" />
-          <span>ملف جديد</span>
+          <span>{t.nav.newMatter}</span>
         </Button>
 
         {/* Matter Details Badge */}
@@ -120,7 +122,7 @@ export function MatterBar({
         )}
       </div>
 
-      {/* Global Actions: Spotlight Trigger, Library, Dark Mode */}
+      {/* Global Actions: Spotlight Trigger, Library, Language Switcher, Dark Mode */}
       <div className="flex items-center gap-2">
         {/* Spotlight Command Trigger Button */}
         <Button
@@ -131,9 +133,9 @@ export function MatterBar({
           className="h-9 gap-2 text-xs text-muted-foreground hover:text-foreground bg-muted/40"
         >
           <Search className="h-3.5 w-3.5 text-primary" />
-          <span className="hidden sm:inline">بحث واستكشاف…</span>
+          <span className="hidden sm:inline">{t.nav.searchPlaceholder}</span>
           <kbd className="hidden sm:inline-flex items-center gap-0.5 rounded border border-border bg-card px-1.5 py-0.2 text-[10px] font-mono text-muted-foreground">
-            ⌘K
+            {t.nav.searchKbd}
           </kbd>
         </Button>
 
@@ -146,9 +148,12 @@ export function MatterBar({
             className="h-9 gap-1.5 text-xs font-semibold text-foreground"
           >
             <BookOpen className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-            <span className="hidden md:inline">المكتبة القانونية</span>
+            <span className="hidden md:inline">{t.nav.legalLibrary}</span>
           </Button>
         </Link>
+
+        {/* Language Switcher Dropdown */}
+        <LanguageSwitcher />
 
         {/* Theme Toggle */}
         <Button
@@ -157,7 +162,7 @@ export function MatterBar({
           size="icon"
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
           className="h-9 w-9 text-foreground"
-          aria-label="Toggle theme"
+          aria-label={t.nav.toggleTheme}
         >
           {theme === "dark" ? (
             <Sun className="h-4 w-4 text-amber-400" />

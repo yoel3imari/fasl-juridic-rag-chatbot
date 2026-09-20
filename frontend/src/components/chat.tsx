@@ -7,6 +7,7 @@ import {
   type Citation,
   type SseEvent,
 } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import { CitationDomainBadge } from "./citation-domain-badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,13 +39,6 @@ function eventKey(c: Citation, i: number): string {
     : `a-${c.source}-${c.version}-${c.article_or_section}-${i}`;
 }
 
-const SUGGESTED_PROMPTS = [
-  "ما هي مهلة الإخطار القانونية لإنهاء العقد؟",
-  "هل تم احترام مسطرة الاستماع المنصوص عليها في المادة 62؟",
-  "استخرج التزامات المشغل والأجير من الوثائق المرفوعة",
-  "ما هي التعويضات المستحقة في حالة الفصل التعسفي؟",
-];
-
 export function Chat({
   matterId,
   onSelectCitation,
@@ -52,9 +46,11 @@ export function Chat({
   matterId: number | null;
   onSelectCitation?: (citation: Citation) => void;
 }) {
+  const { t } = useI18n();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [activity, setActivity] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -69,7 +65,7 @@ export function Chat({
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, busy]);
+  }, [messages, busy, activity]);
 
   const handleCopy = (text: string, index: number) => {
     navigator.clipboard.writeText(text);
@@ -82,7 +78,7 @@ export function Chat({
       const content = (overrideText ?? input).trim();
       if (!content || busy) return;
       if (matterId === null) {
-        setToast("أنشئ أو اختر ملف قضية أولاً للبدء / Veuillez sélectionner un dossier");
+        setToast(t.chat.errorSelectMatter);
         return;
       }
       abortRef.current?.abort();
@@ -91,6 +87,7 @@ export function Chat({
       setInput("");
       setToast(null);
       setBusy(true);
+      setActivity(null);
       setMessages((m) => [...m, { role: "user", text: content, citations: [] }]);
 
       let citations: Citation[] = [];
@@ -119,8 +116,13 @@ export function Chat({
       const onEvent = (ev: SseEvent) => {
         if (ev.type === "citations") citations = ev.citations;
         else if (ev.type === "token") text += ev.text;
-        else if (ev.type === "done") notFound = ev.not_found ?? false;
-        else if (ev.type === "error") error = `${ev.code}: ${ev.detail}`;
+        else if (ev.type === "done") {
+          notFound = ev.not_found ?? false;
+          setActivity(null);
+        } else if (ev.type === "error") {
+          error = `${ev.code}: ${ev.detail}`;
+          setActivity(null);
+        } else if (ev.type === "status") setActivity(ev.message || ev.stage);
         apply();
       };
 
@@ -132,20 +134,21 @@ export function Chat({
         }
       } catch (e) {
         if (e instanceof DOMException && e.name === "AbortError") {
-          error = "تم إيقاف التوليد / Génération arrêtée";
+          error = t.chat.errorAbort;
         } else if (e instanceof ApiError) {
           error = `${e.status}: ${e.message}`;
-          setToast(`خطأ في الاتصال بالخادم (${e.status}) / Erreur serveur`);
+          setToast(t.chat.errorServer.replace("{status}", String(e.status)));
         } else {
           error = e instanceof Error ? e.message : "request failed";
-          setToast("تعذر الاتصال بالخادم / Erreur de connexion réseau");
+          setToast(t.chat.errorNetwork);
         }
         apply();
       } finally {
+        setActivity(null);
         setBusy(false);
       }
     },
-    [input, busy, matterId],
+    [input, busy, matterId, t],
   );
 
   return (
@@ -161,15 +164,15 @@ export function Chat({
           </div>
           <div>
             <h2 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
-              المساعد القانوني الذكي
+              {t.chat.headerTitle}
               <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.2 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-                <ShieldCheck className="h-3 w-3" /> مؤصل قانونياً
+                <ShieldCheck className="h-3 w-3" /> {t.chat.groundedBadge}
               </span>
             </h2>
             <p className="text-[11px] text-muted-foreground">
               {matterId
-                ? `مرتبط بالقضية #${matterId} · نصوص القانون المغربي ووثائق الملف`
-                : "يرجى اختيار قضية من الأعلى"}
+                ? t.chat.subtitleWithMatter.replace("{id}", String(matterId))
+                : t.chat.subtitleNoMatter}
             </p>
           </div>
         </div>
@@ -178,10 +181,13 @@ export function Chat({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setMessages([])}
+            onClick={() => {
+              setMessages([]);
+              setActivity(null);
+            }}
             className="text-xs text-muted-foreground hover:text-foreground"
           >
-            <RefreshCw className="h-3.5 w-3.5 me-1" /> مسح المحادثة
+            <RefreshCw className="h-3.5 w-3.5 me-1" /> {t.chat.clearChat}
           </Button>
         )}
       </div>
@@ -208,18 +214,18 @@ export function Chat({
               <Scale className="h-7 w-7" />
             </div>
             <h3 className="text-base font-bold text-foreground">
-              مرحباً بك في فصل (FASL)
+              {t.chat.welcomeTitle}
             </h3>
             <p className="mt-1 max-w-sm text-xs text-muted-foreground leading-relaxed">
-              اطرح أي استفسار قانوني حول وثائق ملفك، أو استشر نصوص القانون المغربي (مدونة الشغل، قانون الالتزامات والعقود، مدونة التجارة).
+              {t.chat.welcomeSubtitle}
             </p>
 
             {/* Quick Starter Chips */}
             <div className="mt-6 flex flex-col gap-1.5 w-full max-w-md">
               <span className="text-[11px] font-semibold text-muted-foreground text-start">
-                💡 نماذج أسئلة مقترحة:
+                {t.chat.suggestedPromptsLabel}
               </span>
-              {SUGGESTED_PROMPTS.map((prompt, idx) => (
+              {t.chat.suggestedPrompts.map((prompt, idx) => (
                 <button
                   key={idx}
                   type="button"
@@ -232,6 +238,19 @@ export function Chat({
                 </button>
               ))}
             </div>
+          </div>
+        )}
+
+        {busy && activity && (
+          <div
+            role="status"
+            aria-live="polite"
+            className={cn(
+              "flex items-center gap-2 px-1 text-[11px] text-muted-foreground",
+            )}
+          >
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary animate-pulse" />
+            <span>{activity}</span>
           </div>
         )}
 
@@ -276,7 +295,7 @@ export function Chat({
               >
                 {/* Content */}
                 <div className="whitespace-pre-wrap">
-                  {m.text || (m.error ? "" : "جارٍ الصياغة والتحليل القانوني…")}
+                  {m.text || (m.error ? "" : t.chat.draftingStatus)}
                 </div>
 
                 {/* Error */}
@@ -298,12 +317,12 @@ export function Chat({
                     {copiedIndex === i ? (
                       <>
                         <Check className="h-3 w-3 text-emerald-500" />
-                        <span className="text-emerald-500">تم النسخ</span>
+                        <span className="text-emerald-500">{t.common.copied}</span>
                       </>
                     ) : (
                       <>
                         <Copy className="h-3 w-3" />
-                        <span>نسخ</span>
+                        <span>{t.common.copy}</span>
                       </>
                     )}
                   </button>
@@ -327,7 +346,7 @@ export function Chat({
               {/* Provisional disclaimer if not found */}
               {m.notFound && (
                 <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400 font-medium">
-                  ⚖️ لم يتم العثور على سند مباشر مطابق — الإجابة استرشادية مؤقتة.
+                  {t.chat.provisionalDisclaimer}
                 </p>
               )}
             </div>
@@ -351,8 +370,8 @@ export function Chat({
             disabled={busy}
             placeholder={
               matterId
-                ? "اكتب استفسارك القانوني حول القضية… (Enter للإرسال)"
-                : "اختر قضية للبدء في طرح الأسئلة…"
+                ? t.chat.inputPlaceholderWithMatter
+                : t.chat.inputPlaceholderNoMatter
             }
             className="flex-1 bg-transparent px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
           />
@@ -367,7 +386,7 @@ export function Chat({
                 className="h-8 gap-1 text-xs"
               >
                 <Square className="h-3.5 w-3.5 fill-current" />
-                <span>إيقاف</span>
+                <span>{t.chat.stop}</span>
               </Button>
             ) : (
               <Button
@@ -376,7 +395,7 @@ export function Chat({
                 disabled={!input.trim() || matterId === null}
                 className="h-8 gap-1 text-xs"
               >
-                <span>إرسال</span>
+                <span>{t.chat.send}</span>
                 <Send className="h-3.5 w-3.5" />
               </Button>
             )}

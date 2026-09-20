@@ -11,7 +11,7 @@ import {
   Sun,
   Plus,
   Scale,
-  MapPin,
+  Globe,
   Check,
 } from "lucide-react";
 import { useTheme } from "next-themes";
@@ -32,6 +32,7 @@ import {
   type Matter,
   type CoverageEntry,
 } from "@/lib/api";
+import { useI18n, SUPPORTED_LANGUAGES } from "@/lib/i18n";
 
 interface CommandPaletteProps {
   open: boolean;
@@ -53,6 +54,7 @@ export function CommandPalette({
   const [matters, setMatters] = React.useState<Matter[]>([]);
   const [coverage, setCoverage] = React.useState<CoverageEntry[]>([]);
   const { theme, setTheme } = useTheme();
+  const { t, language, setLanguage } = useI18n();
   const router = useRouter();
 
   // Load matters and library coverage when dialog opens
@@ -84,12 +86,12 @@ export function CommandPalette({
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
-      <CommandInput placeholder="ابحث عن ملف، نص قانوني، أو إجراء… / Rechercher (⌘K)" />
+      <CommandInput placeholder={t.commandPalette.searchPlaceholder} />
       <CommandList>
-        <CommandEmpty>لا توجد نتائج مطابقة للبحث.</CommandEmpty>
+        <CommandEmpty>{t.commandPalette.emptyResults}</CommandEmpty>
 
         {/* 1. Quick Actions */}
-        <CommandGroup heading="⚡ إجراءات سريعة / Actions">
+        <CommandGroup heading={t.commandPalette.quickActionsHeading}>
           <CommandItem
             onSelect={() => {
               onOpenChange(false);
@@ -97,7 +99,7 @@ export function CommandPalette({
             }}
           >
             <Plus className="me-2 h-4 w-4 text-emerald-500" />
-            <span>إنشاء ملف قضية جديد / Nouveau dossier...</span>
+            <span>{t.commandPalette.newMatter}</span>
             <CommandShortcut>⌘N</CommandShortcut>
           </CommandItem>
 
@@ -110,7 +112,7 @@ export function CommandPalette({
                 }}
               >
                 <Sparkles className="me-2 h-4 w-4 text-amber-500" />
-                <span>تشغيل التحليل الشامل للملف / Analyser</span>
+                <span>{t.commandPalette.triggerAnalysis}</span>
                 <CommandShortcut>AI</CommandShortcut>
               </CommandItem>
 
@@ -121,7 +123,7 @@ export function CommandPalette({
                 }}
               >
                 <Upload className="me-2 h-4 w-4 text-sky-500" />
-                <span>رفع وثيقة جديدة / Téléverser document</span>
+                <span>{t.commandPalette.triggerUpload}</span>
               </CommandItem>
 
               <CommandItem
@@ -131,7 +133,7 @@ export function CommandPalette({
                 }}
               >
                 <FileText className="me-2 h-4 w-4 text-purple-500" />
-                <span>إنشاء مسودة قانونية / Générer acte ou avis</span>
+                <span>{t.commandPalette.triggerDraft}</span>
               </CommandItem>
             </>
           )}
@@ -143,7 +145,7 @@ export function CommandPalette({
             }}
           >
             <Scale className="me-2 h-4 w-4 text-emerald-500" />
-            <span>تصفح المكتبة القانونية / Explorer bibliothèque</span>
+            <span>{t.commandPalette.openLibrary}</span>
           </CommandItem>
 
           <CommandItem
@@ -157,15 +159,45 @@ export function CommandPalette({
             ) : (
               <Moon className="me-2 h-4 w-4 text-indigo-400" />
             )}
-            <span>{theme === "dark" ? "الوضع الفاتح" : "الوضع الليلي"}</span>
+            <span>
+              {theme === "dark"
+                ? t.commandPalette.switchToLight
+                : t.commandPalette.switchToDark}
+            </span>
           </CommandItem>
         </CommandGroup>
 
         <CommandSeparator />
 
-        {/* 2. Matters */}
+        {/* 2. Language Switcher Group */}
+        <CommandGroup heading={t.commandPalette.languagesHeading}>
+          {SUPPORTED_LANGUAGES.map((lang) => {
+            const isSelected = lang.code === language;
+            return (
+              <CommandItem
+                key={lang.code}
+                onSelect={() => {
+                  setLanguage(lang.code);
+                  onOpenChange(false);
+                }}
+              >
+                <Globe className="me-2 h-4 w-4 text-primary" />
+                <span>
+                  {lang.flag} {lang.nativeLabel} ({lang.label})
+                </span>
+                {isSelected && (
+                  <Check className="ms-auto h-4 w-4 text-emerald-500" />
+                )}
+              </CommandItem>
+            );
+          })}
+        </CommandGroup>
+
+        <CommandSeparator />
+
+        {/* 3. Matters */}
         {matters.length > 0 && (
-          <CommandGroup heading="📁 ملفات القضايا / Dossiers">
+          <CommandGroup heading={t.commandPalette.mattersHeading}>
             {matters.map((m) => (
               <CommandItem
                 key={m.id}
@@ -193,9 +225,9 @@ export function CommandPalette({
 
         <CommandSeparator />
 
-        {/* 3. Legal Codes & Authorities */}
+        {/* 4. Legal Codes & Authorities */}
         {coverage.length > 0 && (
-          <CommandGroup heading="📚 النصوص والمدونات القانونية / Textes juridiques">
+          <CommandGroup heading={t.commandPalette.libraryHeading}>
             {coverage.map((c, idx) => (
               <CommandItem
                 key={idx}
@@ -215,7 +247,7 @@ export function CommandPalette({
                 </div>
                 {c.chunks !== undefined && (
                   <span className="ms-auto text-xs text-muted-foreground font-mono">
-                    {c.chunks} فقرة
+                    {c.chunks} {t.upload.chunksIndexed}
                   </span>
                 )}
               </CommandItem>

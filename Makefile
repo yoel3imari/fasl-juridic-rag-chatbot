@@ -45,4 +45,5 @@ test:
 
 clean:
 	find . -name "__pycache__" -type d -prune -exec rm -rf {} +
-	rm -rf backend/.venv frontend/.next frontend/node_modules
+	rm -rf backend/.venv frontend/.next frontend/node_modules +
+	docker compose down -v

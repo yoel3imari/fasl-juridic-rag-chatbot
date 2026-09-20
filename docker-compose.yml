@@ -34,9 +34,12 @@ services:
     restart: unless-stopped
 
   fastapi:
+    # Own image name (prod uses another): a shared name lets `up` reuse the
+    # wrong Dockerfile's image.
+    image: fasl-fastapi-dev
     build:
       context: ./backend
-      target: dev
+      dockerfile: Dockerfile
     command: ["sh", "-c", "uv run alembic upgrade head && exec uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"]
     ports:
       - "8000:8000"
@@ -65,10 +68,13 @@ services:
           action: sync+restart
 
   nextjs:
+    # Own image name (prod uses another): a shared name lets `up` reuse the
+    # wrong Dockerfile's image.
+    image: fasl-nextjs-dev
     build:
       context: ./frontend
-      target: dev
-    command: ["npm", "run", "dev"]
+      dockerfile: Dockerfile
+    command: ["bun", "run", "dev"]
     ports:
       - "3000:3000"
     environment:

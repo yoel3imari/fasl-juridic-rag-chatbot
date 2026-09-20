@@ -7,24 +7,25 @@ import {
   libraryCoverage,
   type CoverageEntry,
 } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
+import { LanguageSwitcher } from "@/components/language-switcher";
 import {
   Scale,
   ArrowRight,
+  ArrowLeft,
   Search,
   BookOpen,
   AlertTriangle,
-  FileCheck2,
   Calendar,
   Layers,
-  Sparkles,
   ShieldCheck,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 export default function LibraryPage() {
+  const { t, isRTL } = useI18n();
   const [entries, setEntries] = useState<CoverageEntry[]>([]);
   const [gaps, setGaps] = useState<string[]>([]);
   const [libraryVersion, setLibraryVersion] = useState<string | null>(null);
@@ -39,9 +40,9 @@ export default function LibraryPage() {
         setLibraryVersion(cov.library_version ?? null);
       })
       .catch((e) =>
-        setError(e instanceof ApiError ? `${e.status}: ${e.message}` : "فشل تحميل نصوص المكتبة القانونية"),
+        setError(e instanceof ApiError ? `${e.status}: ${e.message}` : t.library.errorFailed),
       );
-  }, []);
+  }, [t.library.errorFailed]);
 
   const filteredEntries = entries.filter(
     (e) =>
@@ -61,8 +62,8 @@ export default function LibraryPage() {
               href="/"
               className="flex items-center gap-1.5 rounded-lg border border-border bg-muted/40 px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted transition-colors"
             >
-              <ArrowRight className="h-4 w-4" />
-              <span>العودة للمنصة / Retour</span>
+              {isRTL ? <ArrowRight className="h-4 w-4" /> : <ArrowLeft className="h-4 w-4" />}
+              <span>{t.library.backToPlatform}</span>
             </Link>
 
             <div className="h-4 w-px bg-border/80" />
@@ -72,16 +73,19 @@ export default function LibraryPage() {
                 <Scale className="h-4 w-4" />
               </div>
               <h1 className="text-base font-bold text-foreground" role="heading">
-                المكتبة القانونية المغربية / Bibliothèque juridique
+                {t.library.headerTitle}
               </h1>
             </div>
           </div>
 
-          {libraryVersion && (
-            <Badge variant="outline" className="text-[11px] font-mono">
-              إصدار المكتبة: v{libraryVersion}
-            </Badge>
-          )}
+          <div className="flex items-center gap-2.5">
+            {libraryVersion && (
+              <Badge variant="outline" className="text-[11px] font-mono">
+                {t.library.libraryVersion.replace("{version}", libraryVersion)}
+              </Badge>
+            )}
+            <LanguageSwitcher />
+          </div>
         </div>
       </header>
 
@@ -92,13 +96,13 @@ export default function LibraryPage() {
           <div className="max-w-2xl space-y-2">
             <div className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-bold text-primary">
               <ShieldCheck className="h-3.5 w-3.5" />
-              <span>نصوص رسمية مؤصلة ومفهرسة بالنوازل</span>
+              <span>{t.library.bannerBadge}</span>
             </div>
             <h2 className="text-2xl font-extrabold tracking-tight text-foreground sm:text-3xl">
-              النصوص والمدونات القانونية المعتمدة
+              {t.library.bannerTitle}
             </h2>
             <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
-              تصفح نصوص القانون المغربي المفهرسة والمقسمة بدقة فقرة بفقرة ومادة بمادة، لتوفير استشهادات قطعية في التحليلات والمحادثات.
+              {t.library.bannerDesc}
             </p>
           </div>
 
@@ -107,7 +111,7 @@ export default function LibraryPage() {
               icon={<Search className="h-4 w-4" />}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="ابحث في أسماء المدونات، المواد، أو الطبعات (مدونة الشغل، ق.ل.ع…)"
+              placeholder={t.library.searchPlaceholder}
               className="h-11 text-sm bg-card shadow-sm"
             />
           </div>
@@ -128,7 +132,7 @@ export default function LibraryPage() {
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
               <BookOpen className="h-4 w-4 text-primary" />
-              <span>المدونات والنصوص المتاحة ({filteredEntries.length})</span>
+              <span>{t.library.availableCodes.replace("{count}", String(filteredEntries.length))}</span>
             </h3>
           </div>
 
@@ -152,7 +156,7 @@ export default function LibraryPage() {
                     {e.source}
                   </CardTitle>
                   <p className="text-xs text-muted-foreground font-mono">
-                    الإصدار: {e.version}
+                    {t.sourceInspector.versionLabel.replace("{version}", e.version)}
                   </p>
                 </CardHeader>
 
@@ -167,13 +171,13 @@ export default function LibraryPage() {
                     {e.chunks !== undefined && (
                       <span className="flex items-center gap-1 font-semibold text-primary">
                         <Layers className="h-3 w-3" />
-                        {e.chunks} فقرة مفهرسة
+                        {t.library.chunksCount.replace("{count}", String(e.chunks))}
                       </span>
                     )}
                     {e.pub_date && (
                       <span className="flex items-center gap-1">
                         <Calendar className="h-3 w-3" />
-                        نشر {e.pub_date}
+                        {t.library.publishedDate.replace("{date}", e.pub_date)}
                       </span>
                     )}
                     {e.language && (
@@ -188,7 +192,7 @@ export default function LibraryPage() {
 
             {filteredEntries.length === 0 && !error && (
               <div className="col-span-full py-12 text-center text-sm text-muted-foreground">
-                المكتبة فارغة أو لا توجد نتائج مطابقة لبحثك — Bibliothèque vide pour le moment
+                {t.library.emptyLibrary}
               </div>
             )}
           </div>
@@ -199,10 +203,10 @@ export default function LibraryPage() {
           <section className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-6 space-y-3">
             <h3 className="text-base font-bold text-amber-900 dark:text-amber-200 flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-amber-500" />
-              <span>النواقص التشريعية قيد الإدراج / Lacunes</span>
+              <span>{t.library.gapsTitle}</span>
             </h3>
             <p className="text-xs text-amber-700 dark:text-amber-300">
-              النصوص والملاحق القانونية التالية يجري تدقيقها وفهرستها حالياً لضمها للمكتبة:
+              {t.library.gapsDesc}
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
               {gaps.map((g, i) => (

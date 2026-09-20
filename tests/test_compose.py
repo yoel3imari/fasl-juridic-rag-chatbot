@@ -33,7 +33,9 @@ FORBIDDEN = ("postgres", "redis", "ollama", "auth")
 
 DOCKERFILES = {
     "backend": REPO / "backend" / "Dockerfile",
+    "backend-prod": REPO / "backend" / "Dockerfile.prod",
     "frontend": REPO / "frontend" / "Dockerfile",
+    "frontend-prod": REPO / "frontend" / "Dockerfile.prod",
     "qdrant": REPO / "qdrant" / "Dockerfile",
     "crispembed": REPO / "crispembed" / "Dockerfile",
 }

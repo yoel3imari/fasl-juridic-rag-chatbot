@@ -1,7 +1,8 @@
 "use client";
 
 import type { Citation, SpanRef } from "@/lib/api";
-import { BookOpen, FileText, Scale, Copy, Check, ExternalLink, ShieldCheck } from "lucide-react";
+import { useI18n } from "@/lib/i18n";
+import { BookOpen, FileText, Scale, Copy, Check, ShieldCheck } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ export function SourceInspector({
   activeCitation: Citation | null;
   activeSpan: SpanRef | null;
 }) {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
 
   if (!activeCitation && !activeSpan) {
@@ -23,10 +25,10 @@ export function SourceInspector({
           <BookOpen className="h-6 w-6" />
         </div>
         <h4 className="text-sm font-bold text-foreground">
-          معاين النصوص والاستشهادات القانونية
+          {t.sourceInspector.placeholderTitle}
         </h4>
         <p className="mt-1 max-w-xs text-xs text-muted-foreground">
-          انقر على أي شارة استشهاد (Citation) في المحادثة أو التحليل لعرض النص الكامل للمادة القانونية أو فقرة الوثيقة هنا.
+          {t.sourceInspector.placeholderSubtitle}
         </p>
       </div>
     );
@@ -47,7 +49,7 @@ export function SourceInspector({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Badge variant={isMatter ? "matter" : "authority"}>
-                {isMatter ? "وثيقة من القضية (Matter)" : "نص تشريعي مغربي (Authority)"}
+                {isMatter ? t.sourceInspector.matterBadge : t.sourceInspector.authorityBadge}
               </Badge>
             </div>
             <Button
@@ -65,12 +67,12 @@ export function SourceInspector({
               {copied ? (
                 <>
                   <Check className="h-3 w-3 text-emerald-500" />
-                  <span>تم النسخ</span>
+                  <span>{t.common.copied}</span>
                 </>
               ) : (
                 <>
                   <Copy className="h-3 w-3" />
-                  <span>نسخ المرجع</span>
+                  <span>{t.sourceInspector.copyReference}</span>
                 </>
               )}
             </Button>
@@ -81,14 +83,18 @@ export function SourceInspector({
               <>
                 <FileText className="h-5 w-5 text-sky-500" />
                 <span>
-                  وثيقة رقم #{activeCitation.document_id} ({activeCitation.doc_type})
+                  {t.sourceInspector.docNumber
+                    .replace("{id}", String(activeCitation.document_id))
+                    .replace("{docType}", activeCitation.doc_type)}
                 </span>
               </>
             ) : (
               <>
                 <Scale className="h-5 w-5 text-amber-500" />
                 <span>
-                  {activeCitation.source} — {activeCitation.article_or_section}
+                  {t.sourceInspector.legalCode
+                    .replace("{source}", activeCitation.source)
+                    .replace("{article}", activeCitation.article_or_section)}
                 </span>
               </>
             )}
@@ -100,11 +106,11 @@ export function SourceInspector({
             <>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div className="rounded-lg bg-muted/40 p-2">
-                  <span className="text-muted-foreground block text-[10px]">الصفحة:</span>
-                  <span className="font-bold text-foreground">ص. {activeCitation.page}</span>
+                  <span className="text-muted-foreground block text-[10px]">Page:</span>
+                  <span className="font-bold text-foreground">p. {activeCitation.page}</span>
                 </div>
                 <div className="rounded-lg bg-muted/40 p-2">
-                  <span className="text-muted-foreground block text-[10px]">الفقرة (Paragraph):</span>
+                  <span className="text-muted-foreground block text-[10px]">Paragraph:</span>
                   <span className="font-bold text-foreground font-mono">
                     ¶{activeCitation.span[0]} – {activeCitation.span[1]}
                   </span>
@@ -113,7 +119,7 @@ export function SourceInspector({
 
               <div className="rounded-xl border border-sky-500/20 bg-sky-500/5 p-3 text-xs text-foreground leading-relaxed">
                 <div className="text-[10px] font-bold text-sky-700 dark:text-sky-300 uppercase mb-1 flex items-center gap-1">
-                  <ShieldCheck className="h-3 w-3" /> المرجع الموثوق:
+                  <ShieldCheck className="h-3 w-3" /> {t.sourceInspector.sourceDetails}:
                 </div>
                 <div className="font-mono text-xs">{activeCitation.faithful_ref}</div>
               </div>
@@ -122,28 +128,28 @@ export function SourceInspector({
             <>
               <div className="grid grid-cols-3 gap-2 text-xs">
                 <div className="rounded-lg bg-muted/40 p-2">
-                  <span className="text-muted-foreground block text-[10px]">الإصدار / Version:</span>
+                  <span className="text-muted-foreground block text-[10px]">Version:</span>
                   <span className="font-bold text-foreground">{activeCitation.version}</span>
                 </div>
                 <div className="rounded-lg bg-muted/40 p-2">
-                  <span className="text-muted-foreground block text-[10px]">الطبعة / Edition:</span>
+                  <span className="text-muted-foreground block text-[10px]">Edition:</span>
                   <span className="font-bold text-foreground">{activeCitation.edition}</span>
                 </div>
                 <div className="rounded-lg bg-muted/40 p-2">
-                  <span className="text-muted-foreground block text-[10px]">اللغة / Language:</span>
+                  <span className="text-muted-foreground block text-[10px]">Language:</span>
                   <span className="font-bold text-foreground">{activeCitation.language}</span>
                 </div>
               </div>
 
               <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-foreground leading-relaxed">
                 <div className="text-[10px] font-bold text-amber-700 dark:text-amber-300 uppercase mb-1 flex items-center gap-1">
-                  <ShieldCheck className="h-3 w-3" /> المادة المحالة:
+                  <ShieldCheck className="h-3 w-3" /> {activeCitation.source}
                 </div>
                 <div className="font-semibold text-foreground mb-1">
                   {activeCitation.article_or_section}
                 </div>
                 <div className="text-muted-foreground text-xs">
-                  المصدر التشريعي الرسمي: {activeCitation.source}
+                  {t.sourceInspector.versionLabel.replace("{version}", activeCitation.version)} · {t.sourceInspector.editionLabel.replace("{edition}", activeCitation.edition)}
                 </div>
               </div>
             </>
@@ -157,9 +163,9 @@ export function SourceInspector({
     return (
       <Card className="border-border/80 shadow-sm animate-in fade-in duration-200">
         <CardHeader className="p-4 pb-3 border-b border-border/60">
-          <Badge variant="matter">وثيقة من ملف القضية</Badge>
+          <Badge variant="matter">{t.sourceInspector.matterBadge}</Badge>
           <CardTitle className="text-sm font-bold mt-2">
-            مستند #{activeSpan.document_id} — ص.{activeSpan.page} (فقرة ¶{activeSpan.span[0]}–{activeSpan.span[1]})
+            doc #{activeSpan.document_id} — p.{activeSpan.page} (¶{activeSpan.span[0]}–{activeSpan.span[1]})
           </CardTitle>
         </CardHeader>
         <CardContent className="p-4">

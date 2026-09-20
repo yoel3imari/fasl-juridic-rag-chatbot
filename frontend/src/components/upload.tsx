@@ -3,18 +3,16 @@
 import { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { ApiError, uploadDocument, type UploadOut } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import {
   Upload as UploadIcon,
   FileText,
-  CheckCircle2,
   AlertCircle,
   FileCheck,
   Layers,
-  Sparkles,
 } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 
 const MAX_BYTES = 20_000_000; // 20 MB
 
@@ -25,6 +23,7 @@ export function Upload({
   matterId: number | null;
   onDocumentUploaded?: (doc: UploadOut) => void;
 }) {
+  const { t } = useI18n();
   const [progress, setProgress] = useState<number | null>(null);
   const [uploadedDocs, setUploadedDocs] = useState<UploadOut[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -35,12 +34,15 @@ export function Upload({
       const file = files[0];
       if (!file) return;
       if (matterId === null) {
-        setError("اختر أو أنشئ قضية أولاً لرفع الوثيقة / Sélectionnez un dossier d'abord");
+        setError(t.upload.errorSelectMatter);
         return;
       }
       if (file.size > MAX_BYTES) {
         setError(
-          `الملف كبير جداً (${Math.round(file.size / (1024 * 1024))} MB، الحد الأقصى 20 MB)`,
+          t.upload.errorTooLarge.replace(
+            "{size}",
+            String(Math.round(file.size / (1024 * 1024))),
+          ),
         );
         return;
       }
@@ -59,13 +61,13 @@ export function Upload({
             ? `${e.status}: ${e.message}`
             : e instanceof Error
               ? e.message
-              : "فشل رفع الوثيقة",
+              : t.upload.errorFailed,
         );
       } finally {
         setProgress(null);
       }
     },
-    [matterId, onDocumentUploaded],
+    [matterId, onDocumentUploaded, t],
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -98,11 +100,11 @@ export function Upload({
         </div>
         <p className="text-sm font-semibold text-foreground">
           {isDragActive
-            ? "أفلت الملف هنا للبدء في الفهرسة…"
-            : "اسحب وثيقة القضية هنا، أو انقر للاختيار"}
+            ? t.upload.dropzoneActive
+            : t.upload.dropzoneIdle}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          يدعم عقود العمل، الإنذارات، المراسلات، الأحكام (PDF, DOCX, TXT, MD حتى 20MB)
+          {t.upload.dropzoneHint}
         </p>
       </div>
 
@@ -110,7 +112,7 @@ export function Upload({
       {progress !== null && (
         <div className="space-y-1.5 animate-in fade-in">
           <div className="flex justify-between text-xs font-semibold text-primary">
-            <span>جارٍ رفع وفهرسة الوثيقة وتحليل الفقرات…</span>
+            <span>{t.upload.uploading}</span>
             <span>{progress}%</span>
           </div>
           <div
@@ -145,7 +147,12 @@ export function Upload({
           <div className="flex items-center justify-between">
             <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
               <FileCheck className="h-3.5 w-3.5 text-primary" />
-              <span>الوثائق المفهرسة في هذا الملف ({uploadedDocs.length})</span>
+              <span>
+                {t.upload.uploadedDocsHeading.replace(
+                  "{count}",
+                  String(uploadedDocs.length),
+                )}
+              </span>
             </h4>
           </div>
 
@@ -170,16 +177,16 @@ export function Upload({
                         {doc.filename}
                       </div>
                       <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-0.5">
-                        <span>نوع: {doc.doc_type}</span>
+                        <span>{t.upload.docType}: {doc.doc_type}</span>
                         <span>·</span>
-                        <span>{doc.indexed_count} مقاطع مفهرسة</span>
+                        <span>{doc.indexed_count} {t.upload.chunksIndexed}</span>
                       </div>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-1.5 shrink-0">
                     <Badge variant="matter" className="text-[10px]">
-                      مفهرس بنجاح
+                      {doc.indexed_count} {t.upload.chunksIndexed}
                     </Badge>
                   </div>
                 </div>
@@ -188,7 +195,7 @@ export function Upload({
                 {doc.sections && doc.sections.length > 0 && (
                   <div className="mt-3 pt-2.5 border-t border-border/60">
                     <span className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1 mb-1.5">
-                      <Layers className="h-3 w-3" /> فقرات الوثيقة المستخرجة:
+                      <Layers className="h-3 w-3" /> {t.upload.extractedSections}:
                     </span>
                     <div className="space-y-1.5 max-h-40 overflow-y-auto">
                       {doc.sections.map((sec, sIdx) => (
@@ -197,7 +204,7 @@ export function Upload({
                           className="rounded-lg bg-muted/50 p-2 text-xs border border-border/40"
                         >
                           <div className="font-semibold text-foreground text-[11px] mb-0.5">
-                            {sec.title || `فقرة ${sIdx + 1}`} (ص.{sec.page_start})
+                            {sec.title || `§ ${sIdx + 1}`} (p.{sec.page_start})
                           </div>
                           <div className="text-muted-foreground line-clamp-2 text-[11px]">
                             {sec.faithful_text}

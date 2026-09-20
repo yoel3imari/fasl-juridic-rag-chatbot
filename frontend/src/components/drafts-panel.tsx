@@ -8,21 +8,19 @@ import {
   lawyerReviewDraft,
   type DraftOut,
 } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import { CitationDomainBadge } from "./citation-domain-badge";
 import {
-  FileText,
-  PenTool,
   CheckCircle,
   ShieldAlert,
   UserCheck,
   Sparkles,
   Copy,
   Check,
-  Mail,
-  Scale,
   BookOpen,
+  PenTool,
 } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,26 +32,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-const DRAFT_TYPE_OPTIONS = [
-  {
-    value: "demand_letter",
-    label: "إنذار مباشر / Mise en demeure (Demand Letter)",
-  },
-  {
-    value: "opinion",
-    label: "رأي واستشارة قانونية / Avis juridique (Legal Opinion)",
-  },
-  {
-    value: "client_email",
-    label: "رسالة تفسيرية للموكل / Courriel client",
-  },
-  {
-    value: "memo",
-    label: "مذكرة دفاع أو بيان وقائع / Mémoire interne",
-  },
-];
-
 export function DraftsPanel({ matterId }: { matterId: number | null }) {
+  const { t } = useI18n();
   const [draftType, setDraftType] = useState<string>("demand_letter");
   const [draft, setDraft] = useState<DraftOut | null>(null);
   const [reviewer, setReviewer] = useState("");
@@ -61,9 +41,16 @@ export function DraftsPanel({ matterId }: { matterId: number | null }) {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  const draftOptions = [
+    { value: "demand_letter", label: t.drafts.demandLetter },
+    { value: "opinion", label: t.drafts.opinion },
+    { value: "client_email", label: t.drafts.clientEmail },
+    { value: "memo", label: t.drafts.memo },
+  ];
+
   const guard = () => {
     if (matterId === null) {
-      setError("اختر أو أنشئ ملف قضية أولاً للبدء في الصياغة");
+      setError(t.drafts.errorSelectMatter);
       return false;
     }
     return true;
@@ -81,7 +68,7 @@ export function DraftsPanel({ matterId }: { matterId: number | null }) {
           ? `${e.status}: ${e.message}`
           : e instanceof Error
             ? e.message
-            : "فشل إنشاء أو مراجعة المسودة",
+            : t.drafts.errorFailed,
       );
     } finally {
       setBusy(false);
@@ -101,16 +88,16 @@ export function DraftsPanel({ matterId }: { matterId: number | null }) {
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 rounded-xl border border-border/80 bg-muted/20 p-3.5">
         <div className="flex-1">
           <label className="text-xs font-bold text-foreground block mb-1.5">
-            نوع المحرر أو الوثيقة القانونية المراد صياغتها:
+            {t.drafts.typeSelectLabel}
           </label>
           <Select value={draftType} onValueChange={setDraftType}>
             <SelectTrigger className="w-full bg-card">
-              <SelectValue placeholder="اختر نوع المسودة" />
+              <SelectValue placeholder={t.drafts.draftTypePlaceholder} />
             </SelectTrigger>
             <SelectContent>
-              {DRAFT_TYPE_OPTIONS.map((t) => (
-                <SelectItem key={t.value} value={t.value}>
-                  {t.label}
+              {draftOptions.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -132,7 +119,7 @@ export function DraftsPanel({ matterId }: { matterId: number | null }) {
             className="w-full sm:w-auto gap-1.5 text-xs font-semibold shadow-sm"
           >
             <Sparkles className="h-3.5 w-3.5" />
-            <span>{busy ? "جارٍ التوليد والصياغة…" : "توليد المسودة / Générer"}</span>
+            <span>{busy ? t.drafts.generatingButton : t.drafts.generateButton}</span>
           </Button>
         </div>
       </div>
@@ -166,17 +153,17 @@ export function DraftsPanel({ matterId }: { matterId: number | null }) {
                   {draft.review_state === "lawyer_reviewed" ? (
                     <span className="flex items-center gap-1">
                       <CheckCircle className="h-3.5 w-3.5" />
-                      مراجعة ومؤشرة من المحامي (Lawyer Reviewed)
+                      {t.drafts.lawyerReviewedBadge}
                     </span>
                   ) : draft.review_state === "acknowledged" ? (
                     <span className="flex items-center gap-1">
                       <Check className="h-3.5 w-3.5" />
-                      تم الإقرار بالاستلام (Acknowledged)
+                      {t.drafts.acknowledgedBadge}
                     </span>
                   ) : (
                     <span className="flex items-center gap-1">
                       <PenTool className="h-3.5 w-3.5" />
-                      مسودة أولية قيد الإعداد (Draft)
+                      {t.drafts.draftBadge}
                     </span>
                   )}
                 </Badge>
@@ -192,12 +179,12 @@ export function DraftsPanel({ matterId }: { matterId: number | null }) {
                 {copied ? (
                   <>
                     <Check className="h-3.5 w-3.5 text-emerald-500" />
-                    <span>تم النسخ</span>
+                    <span>{t.common.copied}</span>
                   </>
                 ) : (
                   <>
                     <Copy className="h-3.5 w-3.5" />
-                    <span>نسخ النص</span>
+                    <span>{t.drafts.copyText}</span>
                   </>
                 )}
               </Button>
@@ -244,7 +231,7 @@ export function DraftsPanel({ matterId }: { matterId: number | null }) {
             <div className="rounded-xl border border-border/80 bg-muted/30 p-3.5">
               <h4 className="text-xs font-bold text-foreground mb-2 flex items-center gap-1.5">
                 <UserCheck className="h-4 w-4 text-primary" />
-                <span>إجراءات المصادقة والمراجعة المهنية</span>
+                <span>{t.drafts.acknowledgeTitle}</span>
               </h4>
 
               {draft.review_state === "draft" && (
@@ -258,7 +245,7 @@ export function DraftsPanel({ matterId }: { matterId: number | null }) {
                     className="gap-1.5 text-xs font-semibold"
                   >
                     <Check className="h-3.5 w-3.5" />
-                    <span>إقرار باستلام المسودة / Accuser réception</span>
+                    <span>{t.drafts.acknowledgeButton}</span>
                   </Button>
                 </div>
               )}
@@ -270,7 +257,7 @@ export function DraftsPanel({ matterId }: { matterId: number | null }) {
                       aria-label="reviewer"
                       value={reviewer}
                       onChange={(e) => setReviewer(e.target.value)}
-                      placeholder="اسم المحامي المراجع (مثال: الأستاذ بناني)..."
+                      placeholder={t.drafts.reviewerPlaceholder}
                       className="h-8 text-xs"
                     />
                   </div>
@@ -287,7 +274,7 @@ export function DraftsPanel({ matterId }: { matterId: number | null }) {
                     className="h-8 text-xs font-semibold"
                   >
                     <UserCheck className="h-3.5 w-3.5" />
-                    <span>تأشير ومراجعة المحامي / Révision avocat</span>
+                    <span>{t.drafts.reviewButton}</span>
                   </Button>
                 </div>
               )}

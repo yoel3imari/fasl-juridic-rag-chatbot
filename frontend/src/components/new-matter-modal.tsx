@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { createMatter, type Matter } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import { FolderPlus, MapPin, Briefcase, Globe } from "lucide-react";
 
 const JURISDICTIONS = [
@@ -42,6 +43,7 @@ const MATTER_TYPES = [
 const LANGUAGES = [
   { value: "ar", label: "العربية (Arabic)" },
   { value: "fr", label: "Français (French)" },
+  { value: "en", label: "English (Anglais)" },
 ];
 
 export function NewMatterModal({
@@ -53,12 +55,17 @@ export function NewMatterModal({
   onOpenChange: (open: boolean) => void;
   onMatterCreated: (matter: Matter) => void;
 }) {
+  const { t, language: currentAppLanguage } = useI18n();
   const [title, setTitle] = React.useState("");
   const [jurisdiction, setJurisdiction] = React.useState("casablanca");
   const [matterType, setMatterType] = React.useState("labor");
-  const [language, setLanguage] = React.useState("ar");
+  const [language, setLanguage] = React.useState(currentAppLanguage);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    setLanguage(currentAppLanguage);
+  }, [currentAppLanguage]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -88,13 +95,13 @@ export function NewMatterModal({
         <DialogHeader>
           <div className="flex items-center gap-2 text-primary font-semibold text-base">
             <FolderPlus className="h-5 w-5" />
-            <span>فتح قضية / ملف جديد</span>
+            <span>{t.newMatterModal.modalBadge}</span>
           </div>
           <DialogTitle className="text-xl font-bold">
-            إنشاء ملف قضية جديد
+            {t.newMatterModal.modalTitle}
           </DialogTitle>
           <DialogDescription>
-            سجل تفاصيل القضية للبدء في رفع الوثائق، التحليل القانوني، والاستشارات.
+            {t.newMatterModal.modalDesc}
           </DialogDescription>
         </DialogHeader>
 
@@ -107,13 +114,13 @@ export function NewMatterModal({
 
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-foreground">
-              عنوان الملف / Intitulé du dossier *
+              {t.newMatterModal.titleLabel}
             </label>
             <Input
               required
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="مثال: نزاع عقد عمل - شركة أطلس، أو تعويض عن التسريح..."
+              placeholder={t.newMatterModal.titlePlaceholder}
               className="text-sm"
             />
           </div>
@@ -122,16 +129,16 @@ export function NewMatterModal({
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-foreground flex items-center gap-1">
                 <Briefcase className="h-3.5 w-3.5 text-muted-foreground" />
-                <span>نوع النزاع / Type</span>
+                <span>{t.newMatterModal.matterTypeLabel}</span>
               </label>
               <Select value={matterType} onValueChange={setMatterType}>
                 <SelectTrigger>
                   <SelectValue placeholder="اختر نوع النزاع" />
                 </SelectTrigger>
                 <SelectContent>
-                  {MATTER_TYPES.map((t) => (
-                    <SelectItem key={t.value} value={t.value}>
-                      {t.label}
+                  {MATTER_TYPES.map((type) => (
+                    <SelectItem key={type.value} value={type.value}>
+                      {type.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -141,7 +148,7 @@ export function NewMatterModal({
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-foreground flex items-center gap-1">
                 <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
-                <span>الدائرة القضائية / Juridiction</span>
+                <span>{t.newMatterModal.jurisdictionLabel}</span>
               </label>
               <Select value={jurisdiction} onValueChange={setJurisdiction}>
                 <SelectTrigger>
@@ -161,33 +168,32 @@ export function NewMatterModal({
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-foreground flex items-center gap-1">
               <Globe className="h-3.5 w-3.5 text-muted-foreground" />
-              <span>لغة العمل الرئيسية / Langue</span>
+              <span>{t.newMatterModal.languageLabel}</span>
             </label>
-            <Select value={language} onValueChange={setLanguage}>
+            <Select value={language} onValueChange={(val) => setLanguage(val as "ar" | "fr" | "en")}>
               <SelectTrigger>
-                <SelectValue placeholder="اختر اللغة" />
+                <SelectValue placeholder="اختر لغة التعامل" />
               </SelectTrigger>
               <SelectContent>
-                {LANGUAGES.map((l) => (
-                  <SelectItem key={l.value} value={l.value}>
-                    {l.label}
+                {LANGUAGES.map((lang) => (
+                  <SelectItem key={lang.value} value={lang.value}>
+                    {lang.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
-          <DialogFooter className="mt-4">
+          <DialogFooter className="gap-2 pt-2 sm:gap-0">
             <Button
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
-              disabled={busy}
             >
-              إلغاء / Annuler
+              {t.newMatterModal.cancelButton}
             </Button>
             <Button type="submit" disabled={busy || !title.trim()}>
-              {busy ? "جارٍ الإنشاء…" : "+ إنشاء الملف / Créer"}
+              {busy ? t.newMatterModal.creatingButton : t.newMatterModal.createButton}
             </Button>
           </DialogFooter>
         </form>

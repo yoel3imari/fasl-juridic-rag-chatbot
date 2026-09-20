@@ -1,6 +1,6 @@
-# FastAPI backend, development image. Full deps, root user, source via
-# compose bind mounts with `uv run uvicorn --reload`.
-# Production lives in Dockerfile.prod (lean, non-root appuser).
+# FastAPI backend, production image. Lean, non-root appuser, no bind mounts
+# (persistent state lives in the backend_data_prod volume).
+# Development lives in Dockerfile (full deps, root, reload-friendly).
 FROM python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -24,7 +24,12 @@ COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini ./
 COPY data ./data
-RUN uv sync --frozen
+RUN uv sync --frozen --no-dev
+
+RUN useradd -u 10000 -m appuser \
+    && chown -R appuser /app
+
+USER appuser
 
 EXPOSE 8000
 HEALTHCHECK --interval=10s --timeout=5s --retries=5 \

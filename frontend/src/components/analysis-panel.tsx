@@ -2,13 +2,13 @@
 
 import { useState } from "react";
 import { ApiError, runAnalysis, type AnalysisOut, type SpanRef } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import {
   Sparkles,
   AlertTriangle,
   FileQuestion,
   Calendar,
   Users,
-  CheckCircle2,
   FileText,
   AlertOctagon,
   Scale,
@@ -25,10 +25,11 @@ export function AnalysisPanel({
   matterId: number | null;
   onSelectSpan?: (span: SpanRef) => void;
 }) {
+  const { t, language } = useI18n();
   const [data, setData] = useState<AnalysisOut | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [summaryLang, setSummaryLang] = useState<"ar" | "fr">("ar");
+  const [summaryLang, setSummaryLang] = useState<"ar" | "fr">(language === "fr" ? "fr" : "ar");
 
   const run = async () => {
     if (matterId === null || busy) return;
@@ -42,7 +43,7 @@ export function AnalysisPanel({
           ? `${e.status}: ${e.message}`
           : e instanceof Error
             ? e.message
-            : "فشل استخراج التحليل القانوني",
+            : t.analysis.failedAnalysis,
       );
     } finally {
       setBusy(false);
@@ -56,10 +57,10 @@ export function AnalysisPanel({
         <div>
           <h3 className="text-sm font-bold text-foreground flex items-center gap-1.5">
             <Scale className="h-4 w-4 text-primary" />
-            <span>التحليل القانوني الشامل وتقييم المخاطر</span>
+            <span>{t.analysis.headerTitle}</span>
           </h3>
           <p className="text-[11px] text-muted-foreground mt-0.5">
-            استخراج المخاطر القانونية، التزامات الأطراف، النواقص، وتضارب الوقائع.
+            {t.analysis.headerSubtitle}
           </p>
         </div>
 
@@ -70,7 +71,7 @@ export function AnalysisPanel({
           className="gap-1.5 text-xs font-semibold shadow-sm"
         >
           <Sparkles className="h-3.5 w-3.5" />
-          <span>{busy ? "جارٍ التحليل والتقييم…" : "تشغيل التحليل / Analyser"}</span>
+          <span>{busy ? t.analysis.runningButton : t.analysis.runButton}</span>
         </Button>
       </div>
 
@@ -88,10 +89,10 @@ export function AnalysisPanel({
         <div className="rounded-2xl border border-dashed border-amber-500/40 bg-amber-500/10 p-6 text-center">
           <FileQuestion className="h-8 w-8 text-amber-500 mx-auto mb-2" />
           <p className="text-sm font-bold text-amber-900 dark:text-amber-200">
-            لا توجد وثائق كافية للتحليل
+            {t.analysis.needsDocsTitle}
           </p>
           <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
-            يرجى رفع عقد العمل، الإنذارات أو المراسلات في تبويب الوثائق أولاً.
+            {t.analysis.needsDocsSubtitle}
           </p>
         </div>
       )}
@@ -104,7 +105,12 @@ export function AnalysisPanel({
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-bold flex items-center gap-2 text-foreground">
                   <AlertOctagon className="h-4 w-4 text-destructive" />
-                  <span>المخاطر والعيوب الشكلية والقانونية ({data.content.issues.length})</span>
+                  <span>
+                    {t.analysis.risksTitle.replace(
+                      "{count}",
+                      String(data.content.issues.length),
+                    )}
+                  </span>
                 </CardTitle>
               </div>
             </CardHeader>
@@ -128,10 +134,10 @@ export function AnalysisPanel({
                       }
                     >
                       {row.risk === "High"
-                        ? "خطر مرتفع (High)"
+                        ? t.analysis.riskHigh
                         : row.risk === "Medium"
-                          ? "متوسط (Medium)"
-                          : "منخفض (Low)"}
+                          ? t.analysis.riskMedium
+                          : t.analysis.riskLow}
                     </Badge>
                   </div>
 
@@ -142,7 +148,7 @@ export function AnalysisPanel({
                   {row.span_refs && row.span_refs.length > 0 && (
                     <div className="mt-2 flex flex-wrap items-center gap-1.5 pt-2 border-t border-border/40">
                       <span className="text-[10px] font-semibold text-muted-foreground">
-                        السند من الوثائق:
+                        {t.analysis.groundedSource}
                       </span>
                       {row.span_refs.map((r, rIdx) => (
                         <button
@@ -171,7 +177,7 @@ export function AnalysisPanel({
               <Card className="p-3.5 space-y-2">
                 <h4 className="text-xs font-bold text-foreground flex items-center gap-1.5">
                   <Calendar className="h-3.5 w-3.5 text-primary" />
-                  <span>التواريخ والآجال القانونية</span>
+                  <span>{t.analysis.datesTitle}</span>
                 </h4>
                 <div className="space-y-1.5 max-h-48 overflow-y-auto">
                   {data.content.dates.map((d, idx) => (
@@ -192,7 +198,7 @@ export function AnalysisPanel({
               <Card className="p-3.5 space-y-2">
                 <h4 className="text-xs font-bold text-foreground flex items-center gap-1.5">
                   <Users className="h-3.5 w-3.5 text-primary" />
-                  <span>التزامات الأطراف</span>
+                  <span>{t.analysis.obligationsTitle}</span>
                 </h4>
                 <div className="space-y-1.5 max-h-48 overflow-y-auto">
                   {data.content.obligations.map((ob, idx) => (
@@ -214,7 +220,7 @@ export function AnalysisPanel({
             <Card className="border-amber-500/30 bg-amber-500/5 p-4 space-y-2">
               <h4 className="text-xs font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
                 <AlertTriangle className="h-4 w-4 text-amber-500" />
-                <span>النواقص والوثائق الغائبة (Lacunes)</span>
+                <span>{t.analysis.gapsTitle}</span>
               </h4>
               <ul className="space-y-1 text-xs text-amber-800 dark:text-amber-300">
                 {data.content.gaps.map((gap, gIdx) => (
@@ -232,7 +238,7 @@ export function AnalysisPanel({
             <div className="flex items-center justify-between border-b border-border/60 pb-2">
               <h4 className="text-xs font-bold text-foreground flex items-center gap-1.5">
                 <Languages className="h-4 w-4 text-primary" />
-                <span>الملخص التنفيذي للملف / Synthèse</span>
+                <span>{t.analysis.summaryTitle}</span>
               </h4>
               <div className="flex items-center gap-1 rounded-lg bg-muted p-0.5 text-xs">
                 <button
@@ -244,7 +250,7 @@ export function AnalysisPanel({
                       : "text-muted-foreground"
                   }`}
                 >
-                  العربية
+                  {t.analysis.summaryAr}
                 </button>
                 <button
                   type="button"
@@ -255,14 +261,14 @@ export function AnalysisPanel({
                       : "text-muted-foreground"
                   }`}
                 >
-                  Français
+                  {t.analysis.summaryFr}
                 </button>
               </div>
             </div>
 
             <div className="rounded-xl bg-muted/30 p-3 text-xs leading-relaxed whitespace-pre-line text-foreground">
               {summaryLang === "ar"
-                ? data.content.summary_ar || "لا يوجد ملخص متوفر"
+                ? data.content.summary_ar || t.analysis.noSummary
                 : data.content.summary_fr || "Aucune synthèse disponible"}
             </div>
           </Card>

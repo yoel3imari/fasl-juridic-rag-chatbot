@@ -1,0 +1,39 @@
+# Next.js 16 frontend, production image (bun). Standalone output is enabled
+# via next.config.standalone.mjs, which wraps next.config.js — local
+# `bun run build` keeps using next.config.js untouched (the wrapper is only
+# swapped in inside `builder`).
+# NOTE: no `public/` dir exists yet; the runner omits the public COPY until one
+# is added (standalone server serves ./.next/static only).
+# Development lives in Dockerfile (bun dev server, bind mounts).
+ARG BUN_BASE=oven/bun:1@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895
+
+# ---- prod deps ----
+FROM ${BUN_BASE} AS deps
+WORKDIR /app
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
+
+# ---- prod builder ----
+FROM ${BUN_BASE} AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+# NEXT_PUBLIC_* vars are baked at build time; prod compose passes this as a build arg.
+ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
+# Swap in the standalone wrapper (Docker-only; next.config.js stays the local config).
+RUN mv next.config.js next.config.base.js \
+    && cp next.config.standalone.mjs next.config.mjs \
+    && bun run build
+
+# ---- prod runner: minimal non-root standalone server ----
+FROM ${BUN_BASE} AS runner
+WORKDIR /app
+ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0
+COPY --from=builder --chown=bun:bun /app/.next/standalone ./
+COPY --from=builder --chown=bun:bun /app/.next/static ./.next/static
+USER bun
+EXPOSE 3000
+HEALTHCHECK --interval=10s --timeout=5s --retries=5 \
+    CMD bun -e "const r=await fetch('http://localhost:3000/');if(!r.ok)process.exit(1)"
+CMD ["bun", "server.js"]

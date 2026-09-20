@@ -26,14 +26,18 @@ services:
       - crispembed_models:/models
 
   fastapi:
+    image: !override fasl-fastapi-prod
     build:
       context: ./backend
-      target: prod
+      dockerfile: Dockerfile.prod
     # No --reload in prod; migrate then serve.
     command: !override ["sh", "-c", "uv run alembic upgrade head && exec uv run uvicorn app.main:app --host 0.0.0.0 --port 8000"]
     # Drop dev bind mounts; keep only the data volume.
+    # Own volume (not dev's backend_data): prod runs as appuser, dev as
+    # root, and a shared volume leaves root-owned files that break alembic
+    # with "unable to open database file".
     volumes: !override
-      - backend_data:/app/data
+      - backend_data_prod:/app/data
     restart: !override unless-stopped
     logging:
       driver: json-file
@@ -49,9 +53,10 @@ services:
         condition: service_healthy
 
   nextjs:
+    image: !override fasl-nextjs-prod
     build:
       context: ./frontend
-      target: prod
+      dockerfile: Dockerfile.prod
       args:
         # NEXT_PUBLIC_* is baked at build time; runtime env alone is ignored.
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
@@ -73,3 +78,6 @@ services:
     depends_on:
       fastapi:
         condition: service_healthy
+
+volumes:
+  backend_data_prod:
