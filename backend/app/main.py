@@ -14,7 +14,19 @@ from app.config import settings
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Minimal lifespan: yield only (task 5+ own their service clients)."""
+    """Minimal lifespan: yield only (task 5+ own their service clients).
+
+    Maintenance-safe startup dim assert (plan todo 8): log-and-degrade only,
+    never crash-loop. Skipped under FASL_MIGRATION_LOCK=1.
+    """
+    import logging
+
+    try:
+        from app.library.bulk_migrate import startup_dim_check
+
+        startup_dim_check()
+    except Exception as exc:
+        logging.getLogger(__name__).warning("startup dim check skipped: %s", exc)
     yield
 
 

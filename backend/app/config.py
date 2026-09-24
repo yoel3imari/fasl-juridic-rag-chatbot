@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GROQ_API_KEY: str = ""
 
-    EMBEDDING_MODEL: str = "bge-m3"
+    EMBEDDING_MODEL: str = "granite-embedding-107m"
 
     QDRANT_URL: str = "http://localhost:6333"
     QDRANT_EVIDENCE_COLLECTION: str = "matter_evidence"
@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     UPLOAD_MAX_BYTES: int = 20_000_000
 
     CRISPEMBED_URL: str = "http://localhost:8080"
-    EMBEDDING_DIM: int = 1024
+    EMBEDDING_DIM: int = 384
     OCR_CONFIDENCE_THRESHOLD: float = 0.6
     OCR_LANGUAGES: str = "ara+fra"
     OCR_TIMEOUT_SECONDS: float = 30.0
