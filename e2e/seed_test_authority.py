@@ -6,16 +6,18 @@ query -> authority citation with version+edition) while task 3 awaits real
 curated legal source files. Uses the app's own QdrantStore + CrispEmbed
 client so schema and vectors are production-path.
 
-Usage: uv run python e2e/seed_test_authority.py  (needs :6333 + :8080 live)
+Usage: cd backend && uv run python ../e2e/seed_test_authority.py  (needs :6333 + :8080 live)
 """
 
 from __future__ import annotations
 
 import asyncio
 import sys
+from pathlib import Path
 
-sys.path.insert(0, "backend")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
+from app.config import settings  # noqa: E402
 from app.library.embedder import CrispEmbedClient  # noqa: E402
 from app.search.store import QdrantStore  # noqa: E402
 
@@ -35,9 +37,13 @@ TEST_POINT = {
 
 
 async def main() -> None:
-    embedder = CrispEmbedClient(base_url="http://localhost:8080", model="bge-m3")
+    embedder = CrispEmbedClient(
+        base_url="http://localhost:8080", model=settings.EMBEDDING_MODEL
+    )
     vectors = await embedder.embed([TEST_POINT["text"]])
-    assert len(vectors[0]) == 1024, f"unexpected dim {len(vectors[0])}"
+    assert len(vectors[0]) == settings.EMBEDDING_DIM, (
+        f"unexpected dim {len(vectors[0])} for model {settings.EMBEDDING_MODEL}"
+    )
     store = QdrantStore(url="http://localhost:6333")
     count = store.upsert_authorities([{**TEST_POINT, "vector": vectors[0]}])
     print(f"seeded {count} TEST authority point(s): {TEST_POINT['article_or_section']}")

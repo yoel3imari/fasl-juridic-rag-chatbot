@@ -20,7 +20,7 @@ Fasl is a matter-scoped legal assistant with dual-domain RAG (private matter evi
 | `fastapi` | 8000 | FastAPI, SQLAlchemy async, SQLite, Alembic |
 | `nextjs` | 3000 | Next.js 16, React 19, Tailwind CSS 4, Radix UI, SSE client |
 | `qdrant` | 6333 | Collections `matter_evidence`, `legal_authorities` |
-| `crispembed` | 8080 | bge-m3 embeddings, 1024 dim, 449MB GGUF cached |
+| `crispembed` | 8080 | granite-embedding-107m, 384 dim, 115MB GGUF cached (bge-m3 GGUF kept in the shared volume as the gate fallback) |
 
 There are no Postgres, Redis, Ollama, or auth containers by design.
 
@@ -72,7 +72,7 @@ make logs
 make down
 ```
 
-First boot takes extra time. CrispEmbed builds from source and pulls the bge-m3 model once, later restarts reuse the model volume.
+First boot takes extra time. CrispEmbed builds from source and pulls the granite-embedding-107m model once, later restarts reuse the model volume.
 
 App URLs:
 
@@ -92,10 +92,10 @@ Env vars (see `.env.example`, `.env`, `backend/app/config.py`):
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Local LLM endpoint |
 | `OPENROUTER_API_KEY` | empty | Required for cloud provider |
 | `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | Cloud endpoint |
-| `EMBEDDING_MODEL` | `bge-m3` | Served by CrispEmbed |
+| `EMBEDDING_MODEL` | `granite-embedding-107m` | Served by CrispEmbed (`bge-m3` is the gate fallback) |
 | `QDRANT_URL` | `http://localhost:6333` | `http://qdrant:6333` inside compose |
 | `QDRANT_LOCAL_PATH` | empty | File path or `:memory:`, no server needed |
-| `EMBEDDING_DIM` | `1024` | bge-m3 dimension |
+| `EMBEDDING_DIM` | `384` | granite-embedding-107m dimension (`1024` on the bge-m3 fallback) |
 | `CRISPEMBED_URL` | `http://localhost:8080` | `http://crispembed:8080` inside compose |
 | `DATABASE_URL` | `sqlite+aiosqlite:///./matters.db` | `sqlite+aiosqlite:///./data/matters.db` in Docker |
 | `MATTER_PRIVACY_MODE` | `strict` | `strict` blocks external providers for matter evidence |
@@ -183,7 +183,7 @@ frontend/                 # Next.js app (moroccan-legal-rag-frontend)
   src/lib/                # api.ts SSE client
   e2e/                    # library-first.spec.ts
 qdrant/                   # Qdrant service build
-crispembed/               # CrispEmbed bge-m3 service build
+crispembed/               # CrispEmbed granite-embedding-107m service build
 tests/test_compose.py     # live compose tests
 e2e/seed_test_authority.py
 docker-compose.yml        # dev-first base stack

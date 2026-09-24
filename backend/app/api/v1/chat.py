@@ -40,7 +40,7 @@ def get_store() -> svc.Store:
 
 
 def get_embedder() -> svc.Embedder:
-    """Factory seam: CrispEmbed bge-m3 HTTP client."""
+    """Factory seam: CrispEmbed HTTP client (model from settings)."""
     from app.library.embedder import CrispEmbedClient
 
     return CrispEmbedClient()  # type: ignore[return-value]
@@ -484,7 +484,9 @@ async def chat_rag(
                 )
             )
             await session.commit()
-            yield _sse({"type": "done", "not_found": False, "conversation_id": conversation_id})
+            yield _sse(
+                {"type": "done", "not_found": False, "conversation_id": conversation_id}
+            )
 
         return StreamingResponse(_gen_direct_agent(), media_type="text/event-stream")
 
@@ -534,7 +536,9 @@ async def chat_rag(
                 )
             )
             await session.commit()
-            yield _sse({"type": "done", "not_found": True, "conversation_id": conversation_id})
+            yield _sse(
+                {"type": "done", "not_found": True, "conversation_id": conversation_id}
+            )
 
         return StreamingResponse(_gen_empty(), media_type="text/event-stream")
 
@@ -596,7 +600,9 @@ async def chat_rag(
             )
         )
         await session.commit()
-        yield _sse({"type": "done", "not_found": False, "conversation_id": conversation_id})
+        yield _sse(
+            {"type": "done", "not_found": False, "conversation_id": conversation_id}
+        )
 
     return StreamingResponse(_gen(), media_type="text/event-stream")
 
