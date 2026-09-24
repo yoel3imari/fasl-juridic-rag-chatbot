@@ -5,6 +5,9 @@ __pycache__/
 *.egg-info/
 .env
 matters.db
+storage/
+backend/storage/
+llm_settings.json
 
 # TypeScript build artifacts
 *.tsbuildinfo
@@ -17,6 +20,7 @@ out/
 *.log
 frontend/test-results/
 frontend/playwright-report/
+backend/data/seed
 
 # OS / editor
 .DS_Store

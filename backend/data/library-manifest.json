@@ -2,21 +2,93 @@
   "entries": [
     {
       "source": "Code du Travail",
-      "version": "2023",
+      "version": "2024",
       "edition": "ar-general",
       "file_path": "backend/data/seed/code_du_travail.pdf",
-      "pub_date": "2023-01-01",
+      "pub_date": "2024-01-01",
       "language": "ar",
-      "coverage_note": "Bulletin Officiel general edition (Arabic) is authoritative; seed pending curated PDF"
+      "coverage_note": "Bulletin Officiel general edition (Arabic) is authoritative"
     },
     {
       "source": "Code du Travail",
-      "version": "2023",
+      "version": "2024",
       "edition": "fr-translation",
       "file_path": "backend/data/seed/code_du_travail_fr.pdf",
-      "pub_date": "2023-01-01",
+      "pub_date": "2024-01-01",
       "language": "fr",
-      "coverage_note": "French edition is an official translation, not authoritative over the Arabic general edition"
+      "coverage_note": "French official translation"
+    },
+    {
+      "source": "Code des Obligations et Contrats (DOC)",
+      "version": "2024",
+      "edition": "ar-general",
+      "file_path": "backend/data/seed/code_des_obligations_et_contrats.pdf",
+      "pub_date": "2024-01-01",
+      "language": "ar",
+      "coverage_note": "Dahir formant Code des Obligations et Contrats (Arabic)"
+    },
+    {
+      "source": "Code des Obligations et Contrats (DOC)",
+      "version": "2024",
+      "edition": "fr-translation",
+      "file_path": "backend/data/seed/code_des_obligations_et_contrats_fr.pdf",
+      "pub_date": "2024-01-01",
+      "language": "fr",
+      "coverage_note": "Code des Obligations et Contrats (French translation)"
+    },
+    {
+      "source": "Code de Commerce",
+      "version": "2024",
+      "edition": "ar-general",
+      "file_path": "backend/data/seed/code_de_commerce.pdf",
+      "pub_date": "2024-01-01",
+      "language": "ar",
+      "coverage_note": "Loi n° 15-95 formant Code de Commerce (Arabic)"
+    },
+    {
+      "source": "Code de Commerce",
+      "version": "2024",
+      "edition": "fr-translation",
+      "file_path": "backend/data/seed/code_de_commerce_fr.pdf",
+      "pub_date": "2024-01-01",
+      "language": "fr",
+      "coverage_note": "Code de Commerce (French translation)"
+    },
+    {
+      "source": "Baux Commerciaux (Loi 49-16)",
+      "version": "2024",
+      "edition": "ar-general",
+      "file_path": "backend/data/seed/loi_49_16_baux_commerciaux.pdf",
+      "pub_date": "2024-01-01",
+      "language": "ar",
+      "coverage_note": "Loi n° 49-16 sur les baux d'immeubles commerciaux (Arabic)"
+    },
+    {
+      "source": "Baux Commerciaux (Loi 49-16)",
+      "version": "2024",
+      "edition": "fr-translation",
+      "file_path": "backend/data/seed/loi_49_16_baux_commerciaux_fr.pdf",
+      "pub_date": "2024-01-01",
+      "language": "fr",
+      "coverage_note": "Loi n° 49-16 sur les baux commerciaux (French translation)"
+    },
+    {
+      "source": "Code de Procédure Civile",
+      "version": "2024",
+      "edition": "ar-general",
+      "file_path": "backend/data/seed/code_procedure_civile.pdf",
+      "pub_date": "2024-01-01",
+      "language": "ar",
+      "coverage_note": "Dahir portant loi n° 1-74-447 formant Code de Procédure Civile (Arabic)"
+    },
+    {
+      "source": "Code de Procédure Civile",
+      "version": "2024",
+      "edition": "fr-translation",
+      "file_path": "backend/data/seed/code_procedure_civile_fr.pdf",
+      "pub_date": "2024-01-01",
+      "language": "fr",
+      "coverage_note": "Code de Procédure Civile (French translation)"
     },
     {
       "source": "Code du Travail (Test Fixture)",
@@ -26,6 +98,17 @@
       "pub_date": "2023-01-01",
       "language": "ar",
       "coverage_note": "Pipeline verification fixture - not authoritative legal text"
+    },
+    {
+      "source": "Code de Commerce Test",
+      "version": "2024",
+      "edition": "ar-general",
+      "file_path": "backend/data/seed/code_commerce_test.txt",
+      "pub_date": "2024-01-15",
+      "doc_date": null,
+      "hijri_date": null,
+      "language": "ar",
+      "coverage_note": "Uploaded for testing"
     }
   ]
 }

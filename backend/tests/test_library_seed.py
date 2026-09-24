@@ -90,10 +90,10 @@ def test_seeder_extract_and_provenance_works():
     """seeder extracts 4 chunks from Arabic test fixture with correct provenance."""
     from pathlib import Path
 
-    from app.library.seeder import seed
+    from app.library.seeder import DEFAULT_MANIFEST, seed
 
     result = seed(
-        Path("data/library-manifest.json").resolve(),
+        DEFAULT_MANIFEST,
         embed=False,  # skip embedding to avoid service exhaustion in full suite
     )
     fixture_results = [
@@ -107,12 +107,10 @@ def test_seeder_extract_and_provenance_works():
 
 def test_seed_state_idempotent():
     """Re-seeding the same manifest does not duplicate state."""
-    from pathlib import Path
+    from app.library.seeder import DEFAULT_MANIFEST, seed
 
-    from app.library.seeder import seed
-
-    r1 = seed(Path("data/library-manifest.json").resolve(), embed=True)
-    r2 = seed(Path("data/library-manifest.json").resolve(), embed=True)
+    r1 = seed(DEFAULT_MANIFEST, embed=False)
+    r2 = seed(DEFAULT_MANIFEST, embed=False)
     assert r1["state"] == r2["state"], "seed state should be idempotent"
 
 
@@ -136,3 +134,64 @@ def test_coverage_endpoint_returns_all_manifest_entries():
         assert "version" in t
         assert "edition" in t
         assert "pub_date" in t
+
+
+@pytest.mark.asyncio
+async def test_library_upload_endpoint():
+    """POST /api/v1/library/upload stores metadata, extracts chunks and updates coverage."""
+    from httpx import ASGITransport, AsyncClient
+    from app.main import app
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        file_content = (
+            "المادة 1 - نطاق التطبيق\n"
+            "تسري أحكام هذا القانون على جميع المؤسسات التجارية.\n\n"
+            "المادة 2 - السجل التجاري\n"
+            "يجب على كل تاجر التسجيل في السجل التجاري.\n"
+        ).encode("utf-8")
+
+        resp = await client.post(
+            "/api/v1/library/upload",
+            data={
+                "source": "Code de Commerce Test",
+                "version": "2024",
+                "edition": "ar-general",
+                "pub_date": "2024-01-15",
+                "language": "ar",
+                "coverage_note": "Uploaded for testing",
+            },
+            files={"file": ("code_commerce_test.txt", file_content, "text/plain")},
+        )
+        assert resp.status_code == 201, resp.text
+        data = resp.json()
+        assert data["source"] == "Code de Commerce Test"
+        assert data["version"] == "2024"
+        assert data["chunks"] >= 2
+
+        # Check coverage reflects the uploaded title
+        cov_resp = await client.get("/api/v1/library/coverage")
+        assert cov_resp.status_code == 200
+        cov = cov_resp.json()
+        found = [t for t in cov["titles"] if t["source"] == "Code de Commerce Test"]
+        assert found, "Uploaded document not found in coverage"
+
+
+@pytest.mark.asyncio
+async def test_chat_models_endpoint():
+    """GET /api/v1/chat/models returns available providers and models."""
+    from httpx import ASGITransport, AsyncClient
+    from app.main import app
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/api/v1/chat/models")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "current_provider" in data
+        assert "current_model" in data
+        assert "providers" in data
+        provider_ids = [p["id"] for p in data["providers"]]
+        assert "ollama" in provider_ids
+        assert "openrouter" in provider_ids
+

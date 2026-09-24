@@ -18,3 +18,13 @@ Object.defineProperty(globalThis, "localStorage", {
   value: localStorageMock,
   writable: true,
 });
+
+class ResizeObserverMock {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
+globalThis.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
+window.HTMLElement.prototype.scrollIntoView = function () {};
+

@@ -20,7 +20,6 @@ import {
   BookOpen,
   PenTool,
 } from "lucide-react";
-import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -85,18 +84,18 @@ export function DraftsPanel({ matterId }: { matterId: number | null }) {
   return (
     <section aria-label="drafts" className="space-y-4">
       {/* Studio Controls Header */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 rounded-xl border border-border/80 bg-muted/20 p-3.5">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 rounded-xl border border-border/60 bg-background/40 p-3 shadow-2xs">
         <div className="flex-1">
-          <label className="text-xs font-bold text-foreground block mb-1.5">
+          <label className="text-[11px] font-semibold text-muted-foreground block mb-1">
             {t.drafts.typeSelectLabel}
           </label>
           <Select value={draftType} onValueChange={setDraftType}>
-            <SelectTrigger className="w-full bg-card">
+            <SelectTrigger className="w-full h-8 rounded-lg border-border/60 bg-background/60 text-xs font-medium shadow-2xs">
               <SelectValue placeholder={t.drafts.draftTypePlaceholder} />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="rounded-xl border-border/70 shadow-lg">
               {draftOptions.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
+                <SelectItem key={opt.value} value={opt.value} className="text-xs">
                   {opt.label}
                 </SelectItem>
               ))}
@@ -107,6 +106,7 @@ export function DraftsPanel({ matterId }: { matterId: number | null }) {
         <div className="sm:self-end">
           <Button
             type="button"
+            size="sm"
             disabled={busy || matterId === null}
             onClick={() =>
               void wrap(() =>
@@ -116,7 +116,7 @@ export function DraftsPanel({ matterId }: { matterId: number | null }) {
                 ),
               )
             }
-            className="w-full sm:w-auto gap-1.5 text-xs font-semibold shadow-sm"
+            className="w-full sm:w-auto h-8 gap-1.5 text-xs font-medium rounded-lg shadow-2xs"
           >
             <Sparkles className="h-3.5 w-3.5" />
             <span>{busy ? t.drafts.generatingButton : t.drafts.generateButton}</span>
@@ -127,7 +127,7 @@ export function DraftsPanel({ matterId }: { matterId: number | null }) {
       {error && (
         <div
           role="alert"
-          className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive font-medium"
+          className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive font-medium animate-in fade-in"
         >
           {error}
         </div>
@@ -135,10 +135,10 @@ export function DraftsPanel({ matterId }: { matterId: number | null }) {
 
       {/* Generated Draft Output Card */}
       {draft && (
-        <Card className="border-border/80 shadow-md animate-in fade-in duration-300">
-          <CardHeader className="p-4 pb-3 border-b border-border/60">
-            {/* Status & Review Workflow Bar */}
-            <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="space-y-3 animate-in fade-in duration-200">
+          <div className="rounded-2xl border border-border/70 bg-card shadow-2xs overflow-hidden">
+            {/* Document Action & Status Header */}
+            <div className="p-3 sm:p-4 border-b border-border/50 bg-muted/15 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Badge
                   variant={
@@ -148,42 +148,42 @@ export function DraftsPanel({ matterId }: { matterId: number | null }) {
                         ? "authority"
                         : "secondary"
                   }
-                  className="text-xs py-1"
+                  className="text-[11px] font-medium py-0.5 px-2.5"
                 >
                   {draft.review_state === "lawyer_reviewed" ? (
                     <span className="flex items-center gap-1">
-                      <CheckCircle className="h-3.5 w-3.5" />
+                      <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />
                       {t.drafts.lawyerReviewedBadge}
                     </span>
                   ) : draft.review_state === "acknowledged" ? (
                     <span className="flex items-center gap-1">
-                      <Check className="h-3.5 w-3.5" />
+                      <Check className="h-3.5 w-3.5 text-sky-500" />
                       {t.drafts.acknowledgedBadge}
                     </span>
                   ) : (
                     <span className="flex items-center gap-1">
-                      <PenTool className="h-3.5 w-3.5" />
+                      <PenTool className="h-3.5 w-3.5 text-muted-foreground" />
                       {t.drafts.draftBadge}
                     </span>
                   )}
                 </Badge>
               </div>
 
-              {/* Copy & Actions */}
+              {/* Copy Action */}
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleCopy}
-                className="h-8 gap-1 text-xs"
+                className="h-7 rounded-lg border-border/60 bg-background/50 hover:bg-muted/50 gap-1 text-xs shadow-2xs"
               >
                 {copied ? (
                   <>
-                    <Check className="h-3.5 w-3.5 text-emerald-500" />
-                    <span>{t.common.copied}</span>
+                    <Check className="h-3 w-3 text-emerald-500" />
+                    <span className="text-emerald-500 font-medium">{t.common.copied}</span>
                   </>
                 ) : (
                   <>
-                    <Copy className="h-3.5 w-3.5" />
+                    <Copy className="h-3 w-3" />
                     <span>{t.drafts.copyText}</span>
                   </>
                 )}
@@ -191,46 +191,48 @@ export function DraftsPanel({ matterId }: { matterId: number | null }) {
             </div>
 
             {/* Moroccan Law Provisional Warning Banner */}
-            <div
-              role="status"
-              className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2"
-            >
-              <ShieldAlert className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-              <div>
-                <span className="font-bold">تنبيه قانوني: </span>
-                <span>{draft.provisional_banner} — {draft.status_label}</span>
-              </div>
-            </div>
-          </CardHeader>
-
-          <CardContent className="p-4 space-y-4">
-            {/* Draft Text Content */}
-            <div className="rounded-xl border border-border/60 bg-muted/20 p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap text-foreground">
-              {draft.content}
-            </div>
-
-            {/* Citations in Draft */}
-            {draft.citations && draft.citations.length > 0 && (
-              <div className="space-y-1.5">
-                <span className="text-xs font-bold text-muted-foreground flex items-center gap-1">
-                  <BookOpen className="h-3.5 w-3.5 text-primary" />
-                  السند القانوني والمستندات المعتمدة في الصياغة:
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {draft.citations.map((c, i) => (
-                    <CitationDomainBadge
-                      key={`${c.domain}-${i}`}
-                      citation={c}
-                    />
-                  ))}
+            {draft.provisional_banner && (
+              <div
+                role="status"
+                className="mx-3 sm:mx-4 mt-3 rounded-xl border border-amber-500/25 bg-amber-500/5 p-2.5 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2"
+              >
+                <ShieldAlert className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                <div className="text-[11px] leading-relaxed">
+                  <span className="font-semibold">تنبيه قانوني: </span>
+                  <span>{draft.provisional_banner} — {draft.status_label}</span>
                 </div>
               </div>
             )}
 
-            {/* Workflow Review Actions */}
-            <div className="rounded-xl border border-border/80 bg-muted/30 p-3.5">
-              <h4 className="text-xs font-bold text-foreground mb-2 flex items-center gap-1.5">
-                <UserCheck className="h-4 w-4 text-primary" />
+            {/* Document Canvas Body */}
+            <div className="p-4 sm:p-6 space-y-4">
+              <div className="rounded-xl border border-border/50 bg-muted/10 p-4 sm:p-5 font-serif text-sm leading-relaxed whitespace-pre-wrap text-foreground select-text shadow-inner">
+                {draft.content}
+              </div>
+
+              {/* Citations in Draft */}
+              {draft.citations && draft.citations.length > 0 && (
+                <div className="space-y-1.5 pt-1">
+                  <span className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
+                    <BookOpen className="h-3.5 w-3.5 text-primary" />
+                    السند القانوني والمستندات المعتمدة في الصياغة:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {draft.citations.map((c, i) => (
+                      <CitationDomainBadge
+                        key={`${c.domain}-${i}`}
+                        citation={c}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Workflow Review Actions Footer */}
+            <div className="p-3 sm:p-4 border-t border-border/50 bg-muted/15">
+              <h4 className="text-xs font-semibold text-foreground mb-2 flex items-center gap-1.5">
+                <UserCheck className="h-3.5 w-3.5 text-primary" />
                 <span>{t.drafts.acknowledgeTitle}</span>
               </h4>
 
@@ -242,7 +244,7 @@ export function DraftsPanel({ matterId }: { matterId: number | null }) {
                     size="sm"
                     disabled={busy}
                     onClick={() => void wrap(() => acknowledgeDraft(draft.draft_id))}
-                    className="gap-1.5 text-xs font-semibold"
+                    className="h-8 gap-1.5 text-xs font-medium rounded-lg shadow-2xs"
                   >
                     <Check className="h-3.5 w-3.5" />
                     <span>{t.drafts.acknowledgeButton}</span>
@@ -251,14 +253,14 @@ export function DraftsPanel({ matterId }: { matterId: number | null }) {
               )}
 
               {draft.review_state !== "lawyer_reviewed" && (
-                <div className="mt-3 flex flex-wrap items-center gap-2 pt-3 border-t border-border/60">
-                  <div className="flex-1 min-w-[200px]">
+                <div className="mt-2.5 flex flex-wrap items-center gap-2 pt-2.5 border-t border-border/40">
+                  <div className="flex-1 min-w-[180px]">
                     <Input
                       aria-label="reviewer"
                       value={reviewer}
                       onChange={(e) => setReviewer(e.target.value)}
                       placeholder={t.drafts.reviewerPlaceholder}
-                      className="h-8 text-xs"
+                      className="h-8 text-xs rounded-lg border-border/60 bg-background/60 shadow-2xs"
                     />
                   </div>
                   <Button
@@ -271,7 +273,7 @@ export function DraftsPanel({ matterId }: { matterId: number | null }) {
                         lawyerReviewDraft(draft.draft_id, reviewer.trim()),
                       )
                     }
-                    className="h-8 text-xs font-semibold"
+                    className="h-8 text-xs font-medium rounded-lg shadow-2xs"
                   >
                     <UserCheck className="h-3.5 w-3.5" />
                     <span>{t.drafts.reviewButton}</span>
@@ -280,16 +282,16 @@ export function DraftsPanel({ matterId }: { matterId: number | null }) {
               )}
 
               {draft.review_state === "lawyer_reviewed" && (
-                <div className="flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400 font-semibold">
-                  <CheckCircle className="h-4 w-4" />
+                <div className="flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                  <CheckCircle className="h-4 w-4 shrink-0" />
                   <span>
                     تمت المراجعة والتأشير بواسطة: {draft.reviewer} بتاريخ {draft.reviewed_at}
                   </span>
                 </div>
               )}
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
     </section>
   );

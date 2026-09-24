@@ -61,32 +61,37 @@ export function MatterBar({
   const activeMatter = matters.find((m) => m.id === matterId);
 
   return (
-    <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border/80 bg-card/80 backdrop-blur-md px-4 py-2.5 sticky top-0 z-40">
-      {/* Brand & Active Matter */}
-      <div className="flex flex-wrap items-center gap-3">
-        <Link href="/" className="flex items-center gap-2 font-bold text-foreground">
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-            <Scale className="h-4 w-4" />
+    <header className="flex h-13 items-center justify-between gap-3 border-b border-border/60 bg-card/60 backdrop-blur-md px-4 sticky top-0 z-40 shrink-0">
+      {/* Brand & Active Matter Breadcrumb */}
+      <div className="flex items-center gap-3 min-w-0">
+        <Link
+          href="/"
+          className="flex items-center gap-2 font-bold text-foreground hover:opacity-90 transition-opacity shrink-0"
+        >
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-2xs">
+            <Scale className="h-3.5 w-3.5" />
           </div>
-          <span className="text-base tracking-tight font-extrabold text-primary">
+          <span className="text-sm tracking-tight font-extrabold text-foreground">
             {t.common.appName}
           </span>
         </Link>
 
-        {/* Matter Selector using official shadcn Select */}
-        <div className="w-64 sm:w-72">
+        <span className="text-muted-foreground/40 font-light select-none">/</span>
+
+        {/* Matter Selector */}
+        <div className="w-56 sm:w-64">
           <Select
             value={matterId ? String(matterId) : undefined}
             onValueChange={(val) => onSelect(val ? Number(val) : null)}
           >
-            <SelectTrigger className="h-9 bg-card">
+            <SelectTrigger className="h-8 rounded-lg border-border/60 bg-background/60 text-xs font-medium shadow-2xs hover:bg-muted/40 transition-colors">
               <SelectValue placeholder={t.nav.selectMatterPlaceholder} />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="rounded-xl border-border/70 shadow-lg">
               {matters.map((m) => (
-                <SelectItem key={m.id} value={String(m.id)}>
+                <SelectItem key={m.id} value={String(m.id)} className="text-xs">
                   <div className="flex items-center gap-2">
-                    <FolderOpen className="h-4 w-4 text-sky-500 shrink-0" />
+                    <FolderOpen className="h-3.5 w-3.5 text-sky-500 shrink-0" />
                     <span className="truncate font-medium">#{m.id} {m.title}</span>
                   </div>
                 </SelectItem>
@@ -101,21 +106,21 @@ export function MatterBar({
           size="sm"
           variant="outline"
           onClick={onOpenNewMatterModal}
-          className="h-9 gap-1 text-xs font-semibold"
+          className="h-8 rounded-lg border-border/60 bg-background/60 hover:bg-muted/50 gap-1 text-xs font-medium shadow-2xs shrink-0"
         >
           <Plus className="h-3.5 w-3.5" />
-          <span>{t.nav.newMatter}</span>
+          <span className="hidden sm:inline">{t.nav.newMatter}</span>
         </Button>
 
-        {/* Matter Details Badge */}
+        {/* Matter Details Tags */}
         {activeMatter && (
-          <div className="hidden lg:flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="rounded-md bg-muted px-2 py-0.5 font-medium flex items-center gap-1">
-              <MapPin className="h-3 w-3" />
+          <div className="hidden xl:flex items-center gap-1.5 text-xs text-muted-foreground/80">
+            <span className="rounded-md bg-muted/50 px-2 py-0.5 text-[11px] font-medium flex items-center gap-1 border border-border/40">
+              <MapPin className="h-3 w-3 text-muted-foreground" />
               {activeMatter.jurisdiction}
             </span>
-            <span className="rounded-md bg-muted px-2 py-0.5 font-medium flex items-center gap-1">
-              <Briefcase className="h-3 w-3" />
+            <span className="rounded-md bg-muted/50 px-2 py-0.5 text-[11px] font-medium flex items-center gap-1 border border-border/40">
+              <Briefcase className="h-3 w-3 text-muted-foreground" />
               {activeMatter.matter_type}
             </span>
           </div>
@@ -123,18 +128,18 @@ export function MatterBar({
       </div>
 
       {/* Global Actions: Spotlight Trigger, Library, Language Switcher, Dark Mode */}
-      <div className="flex items-center gap-2">
-        {/* Spotlight Command Trigger Button */}
+      <div className="flex items-center gap-1.5 shrink-0">
+        {/* Spotlight Command Trigger */}
         <Button
           type="button"
           variant="outline"
           size="sm"
           onClick={onOpenCommandPalette}
-          className="h-9 gap-2 text-xs text-muted-foreground hover:text-foreground bg-muted/40"
+          className="h-8 rounded-lg border-border/60 bg-background/50 hover:bg-muted/50 gap-2 text-xs text-muted-foreground hover:text-foreground shadow-2xs"
         >
-          <Search className="h-3.5 w-3.5 text-primary" />
-          <span className="hidden sm:inline">{t.nav.searchPlaceholder}</span>
-          <kbd className="hidden sm:inline-flex items-center gap-0.5 rounded border border-border bg-card px-1.5 py-0.2 text-[10px] font-mono text-muted-foreground">
+          <Search className="h-3.5 w-3.5 text-primary/80" />
+          <span className="hidden md:inline">{t.nav.searchPlaceholder}</span>
+          <kbd className="hidden sm:inline-flex items-center gap-0.5 rounded border border-border/70 bg-card px-1.5 py-0.2 text-[10px] font-mono text-muted-foreground">
             {t.nav.searchKbd}
           </kbd>
         </Button>
@@ -145,10 +150,10 @@ export function MatterBar({
             type="button"
             variant="ghost"
             size="sm"
-            className="h-9 gap-1.5 text-xs font-semibold text-foreground"
+            className="h-8 rounded-lg gap-1.5 text-xs font-medium text-foreground hover:bg-muted/50"
           >
-            <BookOpen className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-            <span className="hidden md:inline">{t.nav.legalLibrary}</span>
+            <BookOpen className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span className="hidden lg:inline">{t.nav.legalLibrary}</span>
           </Button>
         </Link>
 
@@ -158,16 +163,16 @@ export function MatterBar({
         {/* Theme Toggle */}
         <Button
           type="button"
-          variant="outline"
+          variant="ghost"
           size="icon"
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          className="h-9 w-9 text-foreground"
+          className="h-8 w-8 rounded-lg text-foreground hover:bg-muted/50"
           aria-label={t.nav.toggleTheme}
         >
           {theme === "dark" ? (
-            <Sun className="h-4 w-4 text-amber-400" />
+            <Sun className="h-3.5 w-3.5 text-amber-400" />
           ) : (
-            <Moon className="h-4 w-4 text-slate-700" />
+            <Moon className="h-3.5 w-3.5 text-slate-700" />
           )}
         </Button>
       </div>

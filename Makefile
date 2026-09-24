@@ -14,23 +14,23 @@ help: ## Display available targets
 
 # Base compose (docker-compose.yml) is dev-first: dev targets, bind mounts,
 # reload commands, develop.watch. Prod needs the overlay:
-#   docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.docker up -d
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env up -d
 # Full dev stack: fastapi :8000, nextjs :3000, qdrant :6333,
 # crispembed :8080. First boot builds CrispEmbed from source + pulls the
 # bge-m3 GGUF — allow extra time once; restarts reuse the model volume.
 dev:
-	docker compose --env-file .env.docker up -d
+	docker compose up -d
 
 # Local app code (backend/frontend run on host) + infra in containers.
 # Add new infra services to this list; fastapi/nextjs stay local.
 dev-local:
-	docker compose --env-file .env.docker up -d qdrant crispembed
+	docker compose --env-file .env up -d qdrant crispembed
 
 build:
-	docker compose --env-file .env.docker build
+	docker compose --env-file .env build
 
 up:
-	docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.docker up -d
+	docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env up -d
 
 down:
 	docker compose down

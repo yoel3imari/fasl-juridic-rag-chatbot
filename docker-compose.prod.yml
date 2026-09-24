@@ -1,5 +1,5 @@
 # Prod overlay: base=dev, prod via -f overlay.
-# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.docker config
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml config
 # Base is dev-first (targets dev, --reload, bind mounts, develop.watch);
 # this file resets everything back to production. Ports/depends_on health
 # are inherited from base (not redefined).

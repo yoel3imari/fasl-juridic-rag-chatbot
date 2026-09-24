@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import llm as llm_mod
+from app import settings_store
 from app.config import Settings
 from app.llm import tools as react_tools
 from app.models.base import get_db
@@ -66,6 +67,212 @@ class RagChatIn(BaseModel):
     content: str = Field(min_length=1)
     conversation_id: int | None = None
     consent: bool = False
+    provider: str | None = None
+    model: str | None = None
+
+
+class ModelOption(BaseModel):
+    id: str
+    name: str
+    description: str | None = None
+    recommended: bool = False
+
+
+class ProviderOption(BaseModel):
+    id: str
+    name: str
+    type: str
+    is_external: bool
+    description: str
+    default_model: str
+    models: list[ModelOption]
+
+
+class ModelsResponse(BaseModel):
+    current_provider: str
+    current_model: str
+    privacy_mode: str
+    providers: list[ProviderOption]
+
+
+@router.get("/models", response_model=ModelsResponse)
+@router.get("/providers", response_model=ModelsResponse)
+async def list_models() -> ModelsResponse:
+    settings = Settings()  # type: ignore[call-arg]
+    stored = settings_store.load_llm_settings()
+    current_provider = stored.get("provider") or settings.LLM_PROVIDER
+    current_model = stored.get("model") or settings.LLM_MODEL
+    providers: list[ProviderOption] = [
+        ProviderOption(
+            id="ollama",
+            name="Ollama (Local)",
+            type="local",
+            is_external=False,
+            description="Local on-device inference with zero data transmission. Strict privacy compliant.",
+            default_model="llama3.2",
+            models=[
+                ModelOption(
+                    id="llama3.2",
+                    name="Llama 3.2 (3B)",
+                    description="Lightweight, fast, local privacy",
+                    recommended=True,
+                ),
+                ModelOption(
+                    id="llama3.1",
+                    name="Llama 3.1 (8B)",
+                    description="Balanced general reasoning",
+                ),
+                ModelOption(
+                    id="qwen2.5",
+                    name="Qwen 2.5 (7B/14B)",
+                    description="Excellent Arabic & multilingual legal understanding",
+                    recommended=True,
+                ),
+                ModelOption(
+                    id="mistral",
+                    name="Mistral (7B)",
+                    description="Concise legal summarization",
+                ),
+                ModelOption(
+                    id="deepseek-r1",
+                    name="DeepSeek R1 Distill",
+                    description="Deep step-by-step reasoning",
+                ),
+            ],
+        ),
+        ProviderOption(
+            id="openrouter",
+            name="OpenRouter (Unified Cloud)",
+            type="cloud",
+            is_external=True,
+            description="Access dozens of state-of-the-art models via OpenRouter unified gateway.",
+            default_model="anthropic/claude-3.5-sonnet",
+            models=[
+                ModelOption(
+                    id="anthropic/claude-3.5-sonnet",
+                    name="Claude 3.5 Sonnet",
+                    description="Top benchmark for legal reasoning and drafting",
+                    recommended=True,
+                ),
+                ModelOption(
+                    id="openai/gpt-4o",
+                    name="GPT-4o",
+                    description="High-capability omnimodel",
+                ),
+                ModelOption(
+                    id="google/gemini-2.0-flash",
+                    name="Gemini 2.0 Flash",
+                    description="Ultra fast with large context window",
+                    recommended=True,
+                ),
+                ModelOption(
+                    id="meta-llama/llama-3.3-70b-instruct",
+                    name="Llama 3.3 70B Instruct",
+                    description="High performance open-weights",
+                ),
+                ModelOption(
+                    id="deepseek/deepseek-r1",
+                    name="DeepSeek R1",
+                    description="Frontier reasoning for complex statutory disputes",
+                ),
+            ],
+        ),
+        ProviderOption(
+            id="openai",
+            name="OpenAI",
+            type="cloud",
+            is_external=True,
+            description="Direct OpenAI API connection (requires OPENAI_API_KEY).",
+            default_model="gpt-4o",
+            models=[
+                ModelOption(
+                    id="gpt-4o",
+                    name="GPT-4o",
+                    description="Flagship intelligent model",
+                    recommended=True,
+                ),
+                ModelOption(
+                    id="gpt-4o-mini",
+                    name="GPT-4o Mini",
+                    description="Fast, cost-efficient analysis",
+                ),
+                ModelOption(
+                    id="o1-mini",
+                    name="o1-mini",
+                    description="Advanced reasoning for complex statutory analysis",
+                ),
+            ],
+        ),
+        ProviderOption(
+            id="anthropic",
+            name="Anthropic",
+            type="cloud",
+            is_external=True,
+            description="Direct Anthropic Claude API connection (requires ANTHROPIC_API_KEY).",
+            default_model="claude-3-5-sonnet-latest",
+            models=[
+                ModelOption(
+                    id="claude-3-5-sonnet-latest",
+                    name="Claude 3.5 Sonnet",
+                    description="State-of-the-art legal precision",
+                    recommended=True,
+                ),
+                ModelOption(
+                    id="claude-3-5-haiku-latest",
+                    name="Claude 3.5 Haiku",
+                    description="Fast and concise responses",
+                ),
+            ],
+        ),
+        ProviderOption(
+            id="google",
+            name="Google Gemini",
+            type="cloud",
+            is_external=True,
+            description="Direct Google Gemini API connection (requires GEMINI_API_KEY).",
+            default_model="gemini-2.0-flash",
+            models=[
+                ModelOption(
+                    id="gemini-2.0-flash",
+                    name="Gemini 2.0 Flash",
+                    description="High-speed next-gen model",
+                    recommended=True,
+                ),
+                ModelOption(
+                    id="gemini-1.5-pro",
+                    name="Gemini 1.5 Pro",
+                    description="Deep document analysis & massive context",
+                ),
+            ],
+        ),
+        ProviderOption(
+            id="groq",
+            name="Groq",
+            type="cloud",
+            is_external=True,
+            description="Ultra-low latency LPU cloud inference (requires GROQ_API_KEY).",
+            default_model="llama-3.3-70b-versatile",
+            models=[
+                ModelOption(
+                    id="llama-3.3-70b-versatile",
+                    name="Llama 3.3 70B (Groq)",
+                    description="Near-instant token generation",
+                    recommended=True,
+                ),
+                ModelOption(
+                    id="mixtral-8x7b-32768",
+                    name="Mixtral 8x7B (Groq)",
+                    description="Fast mixture of experts",
+                ),
+            ],
+        ),
+    ]
+    return ModelsResponse(
+        current_provider=str(current_provider),
+        current_model=str(current_model),
+        privacy_mode=settings.MATTER_PRIVACY_MODE,
+        providers=providers,
+    )
 
 
 def _sse(payload: dict[str, Any]) -> str:
@@ -82,14 +289,19 @@ async def _collect_text(agent: Any, prompt: str) -> str:
 
 
 def _privacy_http(
-    prompt: str, *, settings: Settings, consent: bool, has_matter_evidence: bool
+    prompt: str,
+    *,
+    provider: str,
+    privacy_mode: str,
+    consent: bool,
+    has_matter_evidence: bool,
 ) -> None:
     """Privacy guard mapped to the chat 403 contract."""
     try:
         llm_mod.check_privacy(
             prompt,
-            provider=settings.LLM_PROVIDER,
-            privacy_mode=settings.MATTER_PRIVACY_MODE,
+            provider=provider,
+            privacy_mode=privacy_mode,
             consent=consent,
             has_matter_evidence=has_matter_evidence,
         )
@@ -116,6 +328,8 @@ async def chat_rag(
     free-answer after attempted retrieval is never used.
     """
     settings = Settings()  # type: ignore[call-arg]
+    selected_provider = (body.provider or settings.LLM_PROVIDER).strip().lower()
+    selected_model = (body.model or settings.LLM_MODEL).strip()
 
     if body.conversation_id is not None:
         conv = await session.get(Conversation, body.conversation_id)
@@ -137,6 +351,11 @@ async def chat_rag(
     )
     await session.flush()
     conversation_id = conv.id
+    # Transaction 1 closes here: conversation + user message are committed
+    # before any retrieval/LLM network I/O, so no DB transaction or pooled
+    # connection is held across the ReAct loop or the SSE stream. All
+    # assistant writes below are short Transaction-2 commits.
+    await session.commit()
 
     tool_ctx = react_tools.ToolContext(
         store=get_store(),
@@ -145,11 +364,16 @@ async def chat_rag(
         top_k=RETRIEVE_TOP_K,
     )
     try:
-        agent = llm_mod.get_agent(
-            provider=settings.LLM_PROVIDER, model=settings.LLM_MODEL
-        )
+        agent = llm_mod.get_agent(provider=selected_provider, model=selected_model)
     except llm_mod.InvalidModelError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    # Remember last-used provider/model server-side (before streaming).
+    try:
+        settings_store.save_llm_settings(
+            provider=selected_provider, model=selected_model
+        )
+    except OSError:
+        pass
     # Real pydantic-ai agents get native tools registered; test doubles
     # skip gracefully and are driven by the envelope loop below.
     react_tools.register_retrieval_tools(agent, tool_ctx)
@@ -170,7 +394,8 @@ async def chat_rag(
         )
         _privacy_http(
             decision_prompt,
-            settings=settings,
+            provider=selected_provider,
+            privacy_mode=settings.MATTER_PRIVACY_MODE,
             consent=body.consent,
             has_matter_evidence=bool(matter_raw),
         )
@@ -179,7 +404,7 @@ async def chat_rag(
         except Exception as exc:  # provider down mid-loop: degrade, never crash
             provider_error = str(
                 llm_mod.ProviderUnreachableError(
-                    provider=settings.LLM_PROVIDER, reason=str(exc)
+                    provider=selected_provider, reason=str(exc)
                 )
             )
             break
@@ -220,6 +445,7 @@ async def chat_rag(
                     "type": "error",
                     "code": "provider_unreachable",
                     "detail": provider_error,
+                    "conversation_id": conversation_id,
                 }
             )
             session.add(
@@ -258,7 +484,7 @@ async def chat_rag(
                 )
             )
             await session.commit()
-            yield _sse({"type": "done", "not_found": False})
+            yield _sse({"type": "done", "not_found": False, "conversation_id": conversation_id})
 
         return StreamingResponse(_gen_direct_agent(), media_type="text/event-stream")
 
@@ -271,7 +497,8 @@ async def chat_rag(
     prompt = assemble_prompt(body.content, matter_top, auth_top)
     _privacy_http(
         prompt,
-        settings=settings,
+        provider=selected_provider,
+        privacy_mode=settings.MATTER_PRIVACY_MODE,
         consent=body.consent,
         has_matter_evidence=bool(matter_top),
     )
@@ -307,7 +534,7 @@ async def chat_rag(
                 )
             )
             await session.commit()
-            yield _sse({"type": "done", "not_found": True})
+            yield _sse({"type": "done", "not_found": True, "conversation_id": conversation_id})
 
         return StreamingResponse(_gen_empty(), media_type="text/event-stream")
 
@@ -343,9 +570,10 @@ async def chat_rag(
                     "code": "provider_unreachable",
                     "detail": str(
                         llm_mod.ProviderUnreachableError(
-                            provider=settings.LLM_PROVIDER, reason=str(exc)
+                            provider=selected_provider, reason=str(exc)
                         )
                     ),
+                    "conversation_id": conversation_id,
                 }
             )
             session.add(
@@ -368,7 +596,7 @@ async def chat_rag(
             )
         )
         await session.commit()
-        yield _sse({"type": "done", "not_found": False})
+        yield _sse({"type": "done", "not_found": False, "conversation_id": conversation_id})
 
     return StreamingResponse(_gen(), media_type="text/event-stream")
 

@@ -43,7 +43,7 @@ Full dev stack with hot reload:
 
 ```bash
 make dev
-# docker compose --env-file .env.docker up -d
+# docker compose --env-file .env up -d
 ```
 
 Infra only, app code on the host:
@@ -62,7 +62,7 @@ Production stack (base compose plus prod overlay):
 
 ```bash
 make up
-# docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.docker up -d
+# docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env up -d
 ```
 
 Other targets:
@@ -83,7 +83,7 @@ App URLs:
 
 ## Configuration
 
-Env vars (see `.env.example`, `.env.docker`, `backend/app/config.py`):
+Env vars (see `.env.example`, `.env`, `backend/app/config.py`):
 
 | Var | Default | Notes |
 |---|---|---|
@@ -188,6 +188,6 @@ tests/test_compose.py     # live compose tests
 e2e/seed_test_authority.py
 docker-compose.yml        # dev-first base stack
 docker-compose.prod.yml   # prod overlay
-.env.example / .env.docker
+.env.example / .env
 Makefile                  # dev, dev-local, up, down, logs, test, build, clean
 ```

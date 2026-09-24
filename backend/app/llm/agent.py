@@ -11,6 +11,41 @@ from app.llm.privacy import EXTERNAL_PROVIDERS, LOCAL_PROVIDERS
 
 KNOWN_PROVIDERS: frozenset[str] = EXTERNAL_PROVIDERS | LOCAL_PROVIDERS
 
+_STORED_KEY_ENV_MAP: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("openrouter", ("OPENROUTER_API_KEY",)),
+    ("openai", ("OPENAI_API_KEY",)),
+    ("anthropic", ("ANTHROPIC_API_KEY",)),
+    ("google", ("GEMINI_API_KEY", "GOOGLE_API_KEY")),
+    ("groq", ("GROQ_API_KEY",)),
+)
+
+
+def _inject_stored_api_keys() -> None:
+    """Inject stored API keys into os.environ without logging values.
+
+    Only sets a variable when the stored key is non-empty and the env var
+    is not already set. Failures (missing/corrupt file) are silent so
+    agent construction never breaks.
+    """
+    try:
+        from app import settings_store
+    except Exception:
+        return
+    try:
+        stored = settings_store.load_llm_settings()
+    except Exception:
+        return
+    keys = stored.get("api_keys")
+    if not isinstance(keys, dict):
+        return
+    for provider, env_names in _STORED_KEY_ENV_MAP:
+        value = keys.get(provider, "")
+        if not isinstance(value, str) or not value:
+            continue
+        for env_name in env_names:
+            if not os.environ.get(env_name):
+                os.environ[env_name] = value
+
 
 def build_model_string(provider: str, model: str) -> str:
     """Validate and join provider + model into a pydantic-ai model string."""
@@ -41,6 +76,7 @@ def get_agent(
         provider if provider is not None else settings.LLM_PROVIDER,
         model if model is not None else settings.LLM_MODEL,
     )
+    _inject_stored_api_keys()
     os.environ.setdefault("OLLAMA_BASE_URL", settings.OLLAMA_BASE_URL)
     agent = Agent(model_string)
     agent.model_name = model_string

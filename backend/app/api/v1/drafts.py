@@ -163,6 +163,10 @@ async def create_draft(
             dict(analysis.content_json),
             stored_authority=stored,
         )
+        # Release the read transaction before the optional LLM polish call so
+        # no pooled connection is held across network I/O. Nothing is pending
+        # here (the Draft row is added after), so this only ends the read txn.
+        await session.commit()
         polished = False
         if body.polish:
             try:

@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-ARTICLE_RE = re.compile(r"^\s*(?:المادة|Article)\s+(\d+)", re.IGNORECASE | re.MULTILINE)
+ARTICLE_RE = re.compile(r"^\s*(?:المادة|Article)\s*(\d+)", re.IGNORECASE | re.MULTILINE)
 HEADING_RES = [
     (
         re.compile(r"^\s*(?:الكتاب| Livre)\s+(.+)$", re.IGNORECASE | re.MULTILINE),

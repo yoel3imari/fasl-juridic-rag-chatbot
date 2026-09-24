@@ -1,7 +1,9 @@
 """Matter upload route: POST /api/v1/matters/{matter_id}/documents/upload.
 
 Multipart PDF/DOCX/TXT/MD. Reads the file with a byte bound, delegates to the
-ingestion pipeline, commits once, and translates typed pipeline errors into
+ingestion pipeline (which commits provenance before network I/O, then commits
+the indexing status separately, so no DB transaction is held across embedding
+or vector-store calls), and translates typed pipeline errors into
 HTTP statuses. Oversize bodies are rejected before buffering the whole file.
 """
 
@@ -96,6 +98,8 @@ async def upload_document(
     except StorageError as exc:
         await session.rollback()
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(exc)) from exc
+    # Pipeline owns its commits (provenance, then status); this is a no-op
+    # safety net when the pipeline already committed.
     await session.commit()
     return UploadOut(
         matter_id=result.matter_id,

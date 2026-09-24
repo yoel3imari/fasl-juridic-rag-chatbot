@@ -61,7 +61,17 @@ def check_suffix(filename: str) -> str:
 
 
 async def ingest_upload(session: AsyncSession, upload: UploadInput) -> IngestResult:
-    """Run the full pipeline for one upload; flush rows, leave commit to caller."""
+    """Run the full pipeline for one upload with commit-before-network.
+
+    Transaction 1 persists Document + DocumentVersion + DocumentSections and
+    COMMITS before any external I/O. Embedding (CrispEmbed HTTP) and Qdrant
+    upsert then run with no DB transaction held. Transaction 2 is a short
+    status-only update (indexed / pending-indexing / needs_review).
+
+    This avoids holding a DB write lock (SQLite: single writer) across
+    network calls with 60s timeouts, and ensures a transient embedding
+    failure never rolls back already-committed provenance.
+    """
     from anyio import to_thread
 
     from app.models.document import Document, DocumentVersion
@@ -108,6 +118,7 @@ async def ingest_upload(session: AsyncSession, upload: UploadInput) -> IngestRes
     storage_dir = get_storage_dir()
     target = storage_dir / blob_rel
     created: set[Path] = set()
+    # --- Transaction 1: provenance only, commit before any network call ---
     try:
         final = await to_thread.run_sync(lambda: _write_immutable(target, content))
         created.add(final)
@@ -135,26 +146,42 @@ async def ingest_upload(session: AsyncSession, upload: UploadInput) -> IngestRes
                 )
             )
         await session.flush()
-
-        indexed, error = await _embed_and_index(
-            matter_id=matter_id,
-            document_id=int(document.id),
-            doc_type=doc_type,
-            sections=sections,
-        )
-        status = document.status
-        if error is not None:
-            status = status if needs_review else "pending-indexing"
-        elif not needs_review:
-            status = "indexed"
-        document.status = status
-        await session.flush()
+        await session.commit()
     except Exception:
         await session.rollback()
         await to_thread.run_sync(lambda: discard_created(list(created), created))
         raise
+
+    document_id = int(document.id)
+    initial_status = str(document.status)
+
+    # --- No transaction held here: external network calls only ---
+    indexed, error = await _embed_and_index(
+        matter_id=matter_id,
+        document_id=document_id,
+        doc_type=doc_type,
+        sections=sections,
+    )
+    if error is not None:
+        status = initial_status if needs_review else "pending-indexing"
+    elif not needs_review:
+        status = "indexed"
+    else:
+        status = initial_status
+
+    # --- Transaction 2: short status-only update, never rolls back provenance ---
+    try:
+        document.status = status
+        await session.flush()
+        await session.commit()
+    except Exception as exc:
+        await session.rollback()
+        if error is None:
+            error = f"status update failed: {exc}"
+        status = initial_status
+
     return IngestResult(
-        document_id=int(document.id),
+        document_id=document_id,
         matter_id=matter_id,
         version_no=1,
         blob_ref=blob_rel,

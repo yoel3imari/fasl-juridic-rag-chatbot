@@ -47,19 +47,23 @@ async def unhandled_exception(request: Request, exc: Exception) -> JSONResponse:
 
 from app.api.v1.analysis import router as analysis_router
 from app.api.v1.chat import router as chat_router
+from app.api.v1.conversations import router as conversations_router
 from app.api.v1.documents import router as documents_router
 from app.api.v1.drafts import router as drafts_router
 from app.api.v1.library import router as library_router
 from app.api.v1.matters import router as matters_router
 from app.api.v1.search import router as search_router
+from app.api.v1.settings import router as settings_router
 
 app.include_router(analysis_router)
 app.include_router(matters_router)
+app.include_router(conversations_router)
 app.include_router(library_router)
 app.include_router(documents_router)
 app.include_router(drafts_router)
 app.include_router(chat_router)
 app.include_router(search_router)
+app.include_router(settings_router)
 
 
 @app.get("/health")

@@ -43,8 +43,8 @@ export type Citation = MatterCitation | AuthorityCitation;
 export type SseEvent =
   | { type: "citations"; citations: Citation[] }
   | { type: "token"; text: string }
-  | { type: "done"; not_found?: boolean }
-  | { type: "error"; code: string; detail: string }
+  | { type: "done"; not_found?: boolean; conversation_id?: number }
+  | { type: "error"; code: string; detail: string; conversation_id?: number }
   | { type: "status"; stage: string; message: string };
 
 /**
@@ -70,7 +70,13 @@ export function parseSseLine(line: string): SseEvent | null {
 export async function* streamChat(
   matterId: number,
   content: string,
-  opts: { signal?: AbortSignal; consent?: boolean } = {},
+  opts: {
+    conversationId?: number | null;
+    signal?: AbortSignal;
+    consent?: boolean;
+    provider?: string;
+    model?: string;
+  } = {},
 ): AsyncGenerator<SseEvent, void, void> {
   const res = await fetch(`${API_BASE}/api/v1/chat`, {
     method: "POST",
@@ -78,7 +84,10 @@ export async function* streamChat(
     body: JSON.stringify({
       matter_id: matterId,
       content,
+      conversation_id: opts.conversationId ?? undefined,
       consent: opts.consent ?? false,
+      provider: opts.provider,
+      model: opts.model,
     }),
     signal: opts.signal,
   });
@@ -374,6 +383,196 @@ export async function searchAll(
   return res.json() as Promise<SearchResult>;
 }
 
+export interface LibraryUploadInput {
+  file: File;
+  source: string;
+  version: string;
+  edition?: string;
+  pub_date?: string;
+  doc_date?: string;
+  hijri_date?: string;
+  language?: string;
+  coverage_note?: string;
+}
+
+export interface LibraryUploadOut {
+  status: string;
+  source: string;
+  version: string;
+  edition: string;
+  pub_date?: string | null;
+  doc_date?: string | null;
+  hijri_date?: string | null;
+  language?: string | null;
+  coverage_note?: string | null;
+  chunks: number;
+  embedded: number;
+  message: string;
+}
+
+export async function uploadLibraryDocument(
+  input: LibraryUploadInput,
+  onProgress?: (loaded: number, total: number | null) => void,
+): Promise<LibraryUploadOut> {
+  return new Promise<LibraryUploadOut>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_BASE}/api/v1/library/upload`);
+    xhr.upload.onprogress = (ev) =>
+      onProgress?.(ev.loaded, ev.lengthComputable ? ev.total : null);
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as LibraryUploadOut);
+        } catch (e) {
+          reject(e instanceof Error ? e : new Error("invalid response"));
+        }
+      } else {
+        reject(new ApiError(xhr.status, xhr.responseText));
+      }
+    };
+    xhr.onerror = () => reject(new Error("upload network error"));
+
+    const form = new FormData();
+    form.append("file", input.file, input.file.name);
+    form.append("source", input.source);
+    form.append("version", input.version);
+    form.append("edition", input.edition || "ar-general");
+    if (input.pub_date) form.append("pub_date", input.pub_date);
+    if (input.doc_date) form.append("doc_date", input.doc_date);
+    if (input.hijri_date) form.append("hijri_date", input.hijri_date);
+    if (input.language) form.append("language", input.language);
+    if (input.coverage_note) form.append("coverage_note", input.coverage_note);
+
+    xhr.send(form);
+  });
+}
+
+/* ---------- Models & Providers helpers ---------- */
+
+export interface ModelOption {
+  id: string;
+  name: string;
+  description?: string | null;
+  recommended?: boolean;
+}
+
+export interface ProviderOption {
+  id: string;
+  name: string;
+  type: "local" | "cloud" | string;
+  is_external: boolean;
+  description: string;
+  default_model: string;
+  models: ModelOption[];
+}
+
+export interface ModelsResponse {
+  current_provider: string;
+  current_model: string;
+  privacy_mode: string;
+  providers: ProviderOption[];
+}
+
+export async function listChatModels(): Promise<ModelsResponse> {
+  const res = await fetch(`${API_BASE}/api/v1/chat/models`);
+  if (!res.ok) throw new ApiError(res.status, await safeText(res));
+  return res.json() as Promise<ModelsResponse>;
+}
+
+/* ---------- LLM settings (persistence) ---------- */
+
+export interface LlmSettings {
+  current_provider: string;
+  current_model: string;
+  privacy_mode: string;
+  keys_status: Record<string, boolean>;
+  masked_keys: Record<string, string | null>;
+}
+
+export interface SaveLlmSettingsInput {
+  provider?: string;
+  model?: string;
+  api_keys?: Record<string, string | null>;
+}
+
+export async function getLlmSettings(): Promise<LlmSettings> {
+  const res = await fetch(`${API_BASE}/api/v1/settings/llm`);
+  if (!res.ok) throw new ApiError(res.status, await safeText(res));
+  return res.json() as Promise<LlmSettings>;
+}
+
+export async function saveLlmSettings(
+  input: SaveLlmSettingsInput,
+): Promise<LlmSettings> {
+  const res = await fetch(`${API_BASE}/api/v1/settings/llm`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new ApiError(res.status, await safeText(res));
+  return res.json() as Promise<LlmSettings>;
+}
+
+export interface MessageRecord {
+  id: number;
+  conversation_id: number;
+  role: "user" | "assistant";
+  content: string;
+  citations_json?: Citation[] | null;
+  created_at: string;
+}
+
+export interface ConversationSummary {
+  id: number;
+  matter_id: number;
+  matter_title?: string | null;
+  title: string;
+  created_at: string;
+  message_count: number;
+  preview?: string | null;
+}
+
+export interface ConversationDetail {
+  id: number;
+  matter_id: number;
+  matter_title?: string | null;
+  title: string;
+  created_at: string;
+  messages: MessageRecord[];
+}
+
+export async function listConversations(
+  matterId?: number | null,
+  limit: number = 50,
+): Promise<ConversationSummary[]> {
+  const url = new URL(`${API_BASE}/api/v1/conversations`);
+  if (matterId !== undefined && matterId !== null) {
+    url.searchParams.set("matter_id", String(matterId));
+  }
+  url.searchParams.set("limit", String(limit));
+  const res = await fetch(url.toString());
+  if (!res.ok) throw new ApiError(res.status, await safeText(res));
+  return res.json() as Promise<ConversationSummary[]>;
+}
+
+export async function getConversation(
+  conversationId: number,
+): Promise<ConversationDetail> {
+  const res = await fetch(`${API_BASE}/api/v1/conversations/${conversationId}`);
+  if (!res.ok) throw new ApiError(res.status, await safeText(res));
+  return res.json() as Promise<ConversationDetail>;
+}
+
+export async function deleteConversation(
+  conversationId: number,
+): Promise<{ status: string; id: number }> {
+  const res = await fetch(`${API_BASE}/api/v1/conversations/${conversationId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new ApiError(res.status, await safeText(res));
+  return res.json();
+}
+
 export function matterRefLabel(c: MatterCitation): string {
   return `[matter: doc ${c.document_id} p.${c.page} ¶${c.span[0]}–${c.span[1]}]`;
 }
@@ -381,3 +580,5 @@ export function matterRefLabel(c: MatterCitation): string {
 export function authorityRefLabel(c: AuthorityCitation): string {
   return `[authority: ${c.article_or_section} v${c.version}]`;
 }
+
+
