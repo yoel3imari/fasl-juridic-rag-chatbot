@@ -31,6 +31,12 @@ async def _run_extract(args: argparse.Namespace) -> dict[str, Any]:
     return await run_extract_from_args(args)
 
 
+async def _run_reembed(args: argparse.Namespace) -> dict[str, Any]:
+    from app.library.bulk_reembed import run_reembed_from_args
+
+    return await run_reembed_from_args(args)
+
+
 async def _run_migrate(args: argparse.Namespace) -> dict[str, Any]:
     from app.library.bulk_migrate import run_migrate_from_args
 
@@ -42,6 +48,7 @@ def _register(sub: Any) -> dict[str, Handler]:
     from app.library.bulk_catalog import add_catalog_parser
     from app.library.bulk_extract import add_extract_parser
     from app.library.bulk_migrate import add_migrate_parser
+    from app.library.bulk_reembed import add_reembed_parser
 
     handlers: dict[str, Handler] = {}
     add_catalog_parser(sub)
@@ -50,6 +57,8 @@ def _register(sub: Any) -> dict[str, Handler]:
     handlers["extract"] = _run_extract
     add_migrate_parser(sub)
     handlers["migrate"] = _run_migrate
+    add_reembed_parser(sub)
+    handlers["reembed-matter"] = _run_reembed
     # todo 16: add_run_parser(sub); handlers["run"] = _run_run
     return handlers
 
