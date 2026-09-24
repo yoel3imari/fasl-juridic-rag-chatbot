@@ -337,11 +337,32 @@ export interface CoverageEntry {
   status?: string;
 }
 
-export async function libraryCoverage(): Promise<{
+export interface CoverageSummaryTotals {
+  files: number;
+  indexed: number;
+  extracted: number;
+  embedded: number;
+  chunks: number;
+  chunks_indexed: number;
+}
+
+export interface CoverageSummary {
+  totals: CoverageSummaryTotals;
+  by_category: Record<string, number>;
+  by_status: Record<string, Record<string, number>>;
+  by_edition: Record<string, number>;
+}
+
+export interface CoverageResponse {
   titles: CoverageEntry[];
   gaps: string[];
   library_version: string | null;
-}> {
+  summary?: CoverageSummary;
+  titles_truncated?: number;
+  gaps_truncated?: number;
+}
+
+export async function libraryCoverage(): Promise<CoverageResponse> {
   const res = await fetch(`${API_BASE}/api/v1/library/coverage`);
   if (!res.ok) throw new ApiError(res.status, await safeText(res));
   return res.json();

@@ -6,6 +6,7 @@ import {
   ApiError,
   libraryCoverage,
   type CoverageEntry,
+  type CoverageResponse,
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { LanguageSwitcher } from "@/components/language-switcher";
@@ -31,6 +32,9 @@ export default function LibraryPage() {
   const [entries, setEntries] = useState<CoverageEntry[]>([]);
   const [gaps, setGaps] = useState<string[]>([]);
   const [libraryVersion, setLibraryVersion] = useState<string | null>(null);
+  const [summary, setSummary] = useState<CoverageResponse["summary"]>(undefined);
+  const [titlesTruncated, setTitlesTruncated] = useState<number>(0);
+  const [gapsTruncated, setGapsTruncated] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
@@ -41,6 +45,9 @@ export default function LibraryPage() {
         setEntries(cov.titles ?? []);
         setGaps(cov.gaps ?? []);
         setLibraryVersion(cov.library_version ?? null);
+        setSummary(cov.summary);
+        setTitlesTruncated(cov.titles_truncated ?? 0);
+        setGapsTruncated(cov.gaps_truncated ?? 0);
       })
       .catch((e) =>
         setError(e instanceof ApiError ? `${e.status}: ${e.message}` : t.library.errorFailed),
@@ -134,13 +141,81 @@ export default function LibraryPage() {
           </div>
         )}
 
+        {/* Summary Header */}
+        {summary && (
+          <section aria-label="Coverage summary" className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="rounded-2xl border border-border/70 bg-card p-4 shadow-2xs space-y-1">
+              <div className="flex items-center justify-between text-muted-foreground">
+                <span className="text-[11px] font-medium">{t.library.totalFiles}</span>
+                <BookOpen className="h-3.5 w-3.5 text-primary" />
+              </div>
+              <div className="text-xl font-bold tracking-tight text-foreground">
+                {summary.totals.files}
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                {summary.totals.indexed} {t.library.indexedFiles.toLowerCase()}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-border/70 bg-card p-4 shadow-2xs space-y-1">
+              <div className="flex items-center justify-between text-muted-foreground">
+                <span className="text-[11px] font-medium">{t.library.totalChunks}</span>
+                <Layers className="h-3.5 w-3.5 text-primary" />
+              </div>
+              <div className="text-xl font-bold tracking-tight text-foreground">
+                {summary.totals.chunks_indexed.toLocaleString()}
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                {summary.totals.chunks > summary.totals.chunks_indexed
+                  ? `${summary.totals.chunks.toLocaleString()} extraits`
+                  : t.library.indexedFiles}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-border/70 bg-card p-4 shadow-2xs space-y-1">
+              <div className="flex items-center justify-between text-muted-foreground">
+                <span className="text-[11px] font-medium">{t.library.categoriesCount}</span>
+                <Scale className="h-3.5 w-3.5 text-primary" />
+              </div>
+              <div className="text-xl font-bold tracking-tight text-foreground">
+                {Object.keys(summary.by_category).length}
+              </div>
+              <p className="text-[10px] text-muted-foreground font-mono">
+                {Object.keys(summary.by_edition).join(" · ") || "ar-general"}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-border/70 bg-card p-4 shadow-2xs space-y-1">
+              <div className="flex items-center justify-between text-muted-foreground">
+                <span className="text-[11px] font-medium">{t.library.gapsTitle.split("/")[0].trim()}</span>
+                <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+              </div>
+              <div className="text-xl font-bold tracking-tight text-foreground">
+                {gaps.length + gapsTruncated}
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                {gapsTruncated > 0 ? `+${gapsTruncated} omission` : "Lacunes"}
+              </p>
+            </div>
+          </section>
+        )}
+
         {/* Legal Codes Grid */}
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-              <BookOpen className="h-3.5 w-3.5 text-primary" />
-              <span>{t.library.availableCodes.replace("{count}", String(filteredEntries.length))}</span>
-            </h3>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <BookOpen className="h-3.5 w-3.5 text-primary" />
+                <span>{t.library.availableCodes.replace("{count}", String(filteredEntries.length))}</span>
+              </h3>
+              {titlesTruncated > 0 && (
+                <Badge variant="outline" className="text-[10px] font-mono text-muted-foreground border-border/60">
+                  {t.library.showingLimited
+                    .replace("{count}", String(filteredEntries.length))
+                    .replace("{total}", String(summary?.totals?.files ?? (entries.length + titlesTruncated)))}
+                </Badge>
+              )}
+            </div>
 
             <Button
               type="button"
