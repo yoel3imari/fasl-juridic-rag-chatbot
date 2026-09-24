@@ -86,16 +86,51 @@ def test_provenance_records_all_required_fields():
     assert prov["collection"] == "legal_authorities"
 
 
-def test_seeder_extract_and_provenance_works():
-    """seeder extracts 4 chunks from Arabic test fixture with correct provenance."""
-    from pathlib import Path
+def test_seeder_extract_and_provenance_works(tmp_path):
+    """seeder extracts 4 chunks from Arabic fixture with correct provenance.
 
-    from app.library.seeder import DEFAULT_MANIFEST, seed
+    Bulk-ledger world (plan T10): DEFAULT_MANIFEST is the 723-entry
+    bulk-derived catalog, so the legacy 'Test Fixture' entry no longer lives
+    there. The test drives seed() with a small synthetic manifest instead of
+    asserting on removed seed-world content. seed() writes the global
+    SEED_STATE file, so it is backed up and restored (never dirtied).
+    """
+    import json
 
-    result = seed(
-        DEFAULT_MANIFEST,
-        embed=False,  # skip embedding to avoid service exhaustion in full suite
+    from app.library.seeder import SEED_STATE, seed
+
+    text = "".join(
+        f"المادة {i} - عنوان تجريبي\nنص تجريبي للمادة رقم {i} لغرض الاختبار.\n\n"
+        for i in range(1, 5)
     )
+    fixture = tmp_path / "fixture.txt"
+    fixture.write_text(text, encoding="utf-8")
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "entries": [
+                    {
+                        "source": "Test Fixture",
+                        "version": "2099-test",
+                        "edition": "ar-general",
+                        "file_path": str(fixture),
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    backup = SEED_STATE.read_text(encoding="utf-8") if SEED_STATE.exists() else None
+    try:
+        result = seed(
+            manifest_path,
+            embed=False,  # skip embedding to avoid service exhaustion in full suite
+        )
+    finally:
+        if backup is not None:
+            SEED_STATE.write_text(backup, encoding="utf-8")
     fixture_results = [
         r for r in result["results"] if "Test Fixture" in r.get("entry", "")
     ]
@@ -115,25 +150,45 @@ def test_seed_state_idempotent():
 
 
 def test_coverage_endpoint_returns_all_manifest_entries():
-    """Coverage endpoint returns all manifest entries with metadata fields."""
-    import asyncio
+    """Coverage endpoint returns manifest entries with metadata fields.
 
-    from app.api.v1.library import coverage
+    Bulk-ledger world (plan T10+T17): the manifest is the 723-entry
+    bulk-derived catalog and titles[] is capped at COVERAGE_LIST_CAP, so the
+    test asserts the live contract instead of removed seed-world entries:
+    bounded titles with required fields, subset-of-manifest membership, the
+    truncation count, summary totals, and library_version.
+    """
+    import asyncio
+    import json
+
+    from app.api.v1.library import COVERAGE_LIST_CAP, MANIFEST_PATH, coverage
+    from app.config import settings
 
     cov = asyncio.run(coverage())
+    manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    assert cov["library_version"] == settings.LIBRARY_VERSION
+    assert "summary" in cov
     titles = cov["titles"]
-    sources = [t["source"] for t in titles]
-    assert "Code du Travail" in sources
-    # Test fixture should be present
-    fixture = [t for t in titles if "Test Fixture" in t["source"]]
-    assert fixture, "test fixture not in coverage"
-    assert fixture[0]["status"] == "seeded"
+    assert titles, "coverage titles is empty"
+    assert len(titles) <= COVERAGE_LIST_CAP
+    assert cov["titles_truncated"] == max(
+        0, len(manifest.get("entries", [])) - COVERAGE_LIST_CAP
+    )
+    manifest_keys = {
+        (e["source"], e["version"], e["edition"]) for e in manifest.get("entries", [])
+    }
     # Verify required metadata fields on every title
     for t in titles:
         assert "source" in t
         assert "version" in t
         assert "edition" in t
         assert "pub_date" in t
+        assert (t["source"], t["version"], t["edition"]) in manifest_keys
+    first = manifest["entries"][0]
+    assert any(
+        t["source"] == first["source"] and t["version"] == first["version"]
+        for t in titles
+    ), "first manifest entry missing from (capped) titles"
 
 
 @pytest.mark.asyncio
@@ -169,12 +224,27 @@ async def test_library_upload_endpoint():
         assert data["version"] == "2024"
         assert data["chunks"] >= 2
 
-        # Check coverage reflects the uploaded title
+        # Check coverage reflects the uploaded title. titles[] is capped at
+        # COVERAGE_LIST_CAP (task 17), so assert against the stored manifest
+        # (durable proof) plus the endpoint shape (HTTP contract proof).
+        import json as _json
+
+        from app.api.v1.library import MANIFEST_PATH as _MANIFEST_PATH
+
+        stored = _json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
+        stored_keys = [
+            (e.get("source"), e.get("version")) for e in stored.get("entries", [])
+        ]
+        assert ("Code de Commerce Test", "2024") in stored_keys
         cov_resp = await client.get("/api/v1/library/coverage")
         assert cov_resp.status_code == 200
         cov = cov_resp.json()
+        assert "summary" in cov and "library_version" in cov
+        assert "titles_truncated" in cov and "gaps_truncated" in cov
         found = [t for t in cov["titles"] if t["source"] == "Code de Commerce Test"]
-        assert found, "Uploaded document not found in coverage"
+        assert found or cov["titles_truncated"] > 0, (
+            "Uploaded document neither in capped titles nor counted as truncated"
+        )
 
 
 @pytest.mark.asyncio
@@ -194,4 +264,3 @@ async def test_chat_models_endpoint():
         provider_ids = [p["id"] for p in data["providers"]]
         assert "ollama" in provider_ids
         assert "openrouter" in provider_ids
-

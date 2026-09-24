@@ -23,6 +23,121 @@ BACKEND_DIR = Path(__file__).resolve().parents[3]
 MANIFEST_PATH = BACKEND_DIR / "data" / "library-manifest.json"
 SEED_STATE_PATH = BACKEND_DIR / "data" / "library-seed-state.json"
 
+# Task 17: bounded lists. Old clients keep reading `titles`/`gaps` unchanged;
+# entries past the cap are only counted, never reordered or reshaped.
+COVERAGE_LIST_CAP = 200
+LEDGER_MISSING_GAP = "library ledger missing (summary unavailable)"
+
+
+def _ledger_db_path() -> Path | None:
+    """Resolve the SQLite ledger file from settings at request time.
+
+    Returns None when DATABASE_URL is not a file-backed sqlite URL, so the
+    endpoint degrades to a zero summary instead of raising.
+    """
+    url = settings.DATABASE_URL
+    prefix = "sqlite+aiosqlite:///"
+    if not url.startswith(prefix):
+        return None
+    raw = url[len(prefix) :]
+    if raw in ("", ":memory:"):
+        return None
+    candidate = Path(raw)
+    if not candidate.is_absolute():
+        candidate = Path.cwd() / candidate
+    return candidate
+
+
+def _zero_totals() -> dict:
+    return {
+        "files": 0,
+        "indexed": 0,
+        "extracted": 0,
+        "embedded": 0,
+        "chunks": 0,
+        "chunks_indexed": 0,
+    }
+
+
+def _zero_summary() -> dict:
+    return {
+        "totals": _zero_totals(),
+        "by_category": {},
+        "by_status": {},
+        "by_edition": {},
+    }
+
+
+def _read_ledger_summary_sync(db_path: Path) -> dict:
+    """Aggregate file counts from the SQLite ledger (read-only, pure read).
+
+    Raises OSError/sqlite3.Error when the ledger is missing or unreadable;
+    the caller converts that into a zero summary + gap, never a 500.
+    """
+    import sqlite3
+
+    summary = _zero_summary()
+    uri = f"file:{db_path}?mode=ro"
+    con = sqlite3.connect(uri, uri=True)
+    try:
+        totals = summary["totals"]
+        totals["files"] = con.execute(
+            "SELECT COUNT(*) FROM library_import_files"
+        ).fetchone()[0]
+        for stage in (
+            "parse_status",
+            "extract_status",
+            "embed_status",
+            "index_status",
+        ):
+            rows = con.execute(
+                f"SELECT {stage}, COUNT(*) FROM library_import_files "  # noqa: S608
+                f"GROUP BY {stage}"  # noqa: S608
+            ).fetchall()
+            summary["by_status"][stage] = {s or "unknown": n for s, n in rows}
+        totals["indexed"] = (
+            summary["by_status"].get("index_status", {}).get("indexed", 0)
+        )
+        totals["extracted"] = (
+            summary["by_status"].get("extract_status", {}).get("extracted", 0)
+        )
+        totals["embedded"] = (
+            summary["by_status"].get("embed_status", {}).get("embedded", 0)
+        )
+        for label, cleaned in (
+            ("category", "unparsed"),
+            ("edition", "unparsed"),
+        ):
+            rows = con.execute(
+                f"SELECT {label}, COUNT(*) FROM library_import_files "  # noqa: S608
+                f"GROUP BY {label}"  # noqa: S608
+            ).fetchall()
+            key = f"by_{label}"
+            summary[key] = {(v or cleaned): n for v, n in rows}
+        row = con.execute(
+            "SELECT COALESCE(SUM(chunk_count), 0), "
+            "COALESCE(SUM(indexed_count), 0) FROM library_import_files"
+        ).fetchone()
+        totals["chunks"] = int(row[0])
+        totals["chunks_indexed"] = int(row[1])
+    finally:
+        con.close()
+    return summary
+
+
+async def _ledger_summary() -> tuple[dict, str | None]:
+    """Return (summary, gap): read-only ledger aggregate, zeroed on failure."""
+    from anyio import to_thread
+
+    db_path = _ledger_db_path()
+    if db_path is None or not db_path.exists():
+        return _zero_summary(), LEDGER_MISSING_GAP
+    try:
+        summary = await to_thread.run_sync(_read_ledger_summary_sync, db_path)
+    except Exception:
+        return _zero_summary(), LEDGER_MISSING_GAP
+    return summary, None
+
 
 class CoverageEntry(BaseModel):
     source: str
@@ -62,11 +177,18 @@ async def coverage() -> dict:
             state = json.loads(SEED_STATE_PATH.read_text(encoding="utf-8"))
         except Exception:
             state = {}
+    summary, ledger_gap = await _ledger_summary()
     if not MANIFEST_PATH.exists():
+        manifest_gaps = ["library manifest missing"]
+        if ledger_gap is not None:
+            manifest_gaps.append(ledger_gap)
         return {
             "titles": [],
-            "gaps": ["library manifest missing"],
+            "gaps": manifest_gaps,
             "library_version": None,
+            "summary": summary,
+            "titles_truncated": 0,
+            "gaps_truncated": 0,
         }
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
     for e in manifest.get("entries", []):
@@ -93,7 +215,18 @@ async def coverage() -> dict:
         )
         if key not in state:
             gaps.append(f"not yet seeded: {key}")
-    return {"titles": entries, "gaps": gaps}
+    if ledger_gap is not None:
+        gaps.append(ledger_gap)
+    titles_truncated = max(0, len(entries) - COVERAGE_LIST_CAP)
+    gaps_truncated = max(0, len(gaps) - COVERAGE_LIST_CAP)
+    return {
+        "titles": entries[:COVERAGE_LIST_CAP],
+        "gaps": gaps[:COVERAGE_LIST_CAP],
+        "library_version": settings.LIBRARY_VERSION,
+        "summary": summary,
+        "titles_truncated": titles_truncated,
+        "gaps_truncated": gaps_truncated,
+    }
 
 
 @router.post(
