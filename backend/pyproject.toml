@@ -37,6 +37,21 @@ dev = [
     "pillow>=10.0",
     "pytesseract>=0.3.10",
 ]
+# Dev/CI-only pinned reference stack for the CLS-pooling parity harness
+# (plan todo 5: scripts/embedding_reference.py). CPU-only: install torch from
+# the PyTorch CPU index, e.g.
+#   uv pip install --index-url https://download.pytorch.org/whl/cpu \
+#       -e ".[embedding-reference]"
+# Never a runtime dependency; never installed in the prod image.
+embedding-reference = [
+    "torch==2.8.0",
+    "transformers==4.57.6",
+    "tokenizers==0.22.2",
+    "huggingface-hub==0.34.6",
+    "safetensors==0.8.0",
+    "numpy==2.5.3; python_version >= '3.12'",
+    "numpy==2.2.6; python_version < '3.12'",
+]
 
 [build-system]
 requires = ["hatchling"]
