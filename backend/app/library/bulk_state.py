@@ -58,6 +58,17 @@ FILE_STAGE_VALUES = {
 CHUNK_STATUS_VALUES = frozenset({"pending", "embedded", "indexed", "failed"})
 CHUNK_DONE = "indexed"
 
+# Pipeline order for the file-level stage machine:
+# catalogued -> extracted -> embedded -> indexed (todo 13 resume semantics).
+STAGE_ORDER = ("extract_status", "embed_status", "index_status")
+STAGE_UPSTREAM: dict[str, tuple[str, ...]] = {
+    "extract_status": (),
+    "embed_status": ("extract_status",),
+    "index_status": ("extract_status", "embed_status"),
+}
+# Statuses at a stage that a re-run must re-drive (never skip).
+REDRIVE_STATUSES = frozenset({"pending", "failed"})
+
 
 class WriterBusyError(RuntimeError):
     """Raised when a second bulk writer tries to acquire the writer lock."""
@@ -109,6 +120,117 @@ def set_chunk_status(row: Any, value: str) -> None:
             f"chunk status is terminal at {current!r}; refusing regression to {value!r}"
         )
     setattr(row, "status", value)
+
+
+def _is_indexed(row: Any) -> bool:
+    """True when the file already reached the terminal `indexed` state."""
+    return _get(row, "index_status") == FILE_STAGE_DONE["index_status"]
+
+
+def assert_stage_ready(row: Any, stage: str) -> None:
+    """Enforce pipeline order: refuse `stage` unless every upstream stage is DONE.
+
+    Pure (no DB side effects). Raises :class:`InvalidTransitionError` when an
+    upstream stage is not at its terminal DONE value, or when the file is
+    already terminally `indexed` (nothing downstream left to do).
+    """
+    if stage not in STAGE_UPSTREAM:
+        raise InvalidTransitionError(f"unknown pipeline stage {stage!r}")
+    if _is_indexed(row):
+        raise InvalidTransitionError("file is already indexed; refusing re-drive")
+    for upstream in STAGE_UPSTREAM[stage]:
+        if _get(row, upstream) != FILE_STAGE_DONE[upstream]:
+            raise InvalidTransitionError(
+                f"{stage} requires {upstream}={FILE_STAGE_DONE[upstream]!r}, "
+                f"found {_get(row, upstream)!r}"
+            )
+
+
+def files_for_extract(
+    rows: Sequence[Any],
+    *,
+    redrive_quarantine_prefixes: tuple[str, ...] = (),
+) -> list[Any]:
+    """Pure resume selection for the extract stage (no DB side effects).
+
+    Skips verifiable `extracted` rows (extract_status + artifact sha present)
+    and terminal quarantines; re-drives `pending`/`failed`, retriable
+    quarantines (reason prefix match), and `extracted` rows with no artifact
+    sha (pre-todo-13 rows: needs re-extract, never a silent pass). Files
+    already terminally `indexed` are always skipped. Order preserved.
+    """
+    out: list[Any] = []
+    for row in rows:
+        if _is_indexed(row):
+            continue
+        status = _get(row, "extract_status")
+        if status == FILE_STAGE_DONE["extract_status"]:
+            if _get(row, "artifact_sha256"):
+                continue  # verifiable finished work: never redo
+            out.append(row)  # extracted but unverifiable: re-drive
+        elif status in REDRIVE_STATUSES:
+            out.append(row)
+        elif status == "quarantined":
+            reason = _get(row, "quarantine_reason") or ""
+            if redrive_quarantine_prefixes and reason.startswith(
+                redrive_quarantine_prefixes
+            ):
+                out.append(row)
+            # else: terminal quarantine stays quarantined
+        # `failed` is in REDRIVE_STATUSES; anything else unknown is skipped
+        # (callers surface it via the status-transition guard, not here).
+    return out
+
+
+def files_for_embed(rows: Sequence[Any]) -> list[Any]:
+    """Pure resume selection for the embed stage (no DB side effects).
+
+    Skips `embedded` and terminally `indexed` files (never re-embed finished
+    work); re-drives `pending`/`failed` files whose extract stage is DONE.
+    """
+    out: list[Any] = []
+    for row in rows:
+        if _is_indexed(row):
+            continue
+        if _get(row, "embed_status") == FILE_STAGE_DONE["embed_status"]:
+            continue
+        if _get(row, "embed_status") not in REDRIVE_STATUSES:
+            continue
+        if _get(row, "extract_status") != FILE_STAGE_DONE["extract_status"]:
+            continue  # upstream not done: not this stage's work
+        out.append(row)
+    return out
+
+
+def files_for_index(rows: Sequence[Any]) -> list[Any]:
+    """Pure resume selection for the index stage (no DB side effects).
+
+    Skips terminally `indexed` files; re-drives `pending`/`failed` files
+    whose embed stage is DONE.
+    """
+    out: list[Any] = []
+    for row in rows:
+        if _is_indexed(row):
+            continue
+        if _get(row, "index_status") not in REDRIVE_STATUSES:
+            continue
+        if _get(row, "embed_status") != FILE_STAGE_DONE["embed_status"]:
+            continue  # upstream not done: not this stage's work
+        out.append(row)
+    return out
+
+
+def post_dedup_limit(items: Sequence[Any], limit: int | None) -> list[Any]:
+    """Gate an already-deduped winner list to `--limit` (pure).
+
+    Dedup winners are fixed upstream by the catalog; the limit only gates how
+    many flow downstream and must never change which path won a content hash.
+    """
+    if limit is None:
+        return list(items)
+    if limit < 0:
+        raise ValueError(f"limit must be >= 0, got {limit}")
+    return list(items[:limit])
 
 
 async def bump_indexed_count(
@@ -197,6 +319,13 @@ def build_seed_state_payload(rows: Sequence[Any]) -> dict:
     return state
 
 
+def _dumps_canonical(payload: Any) -> bytes:
+    """Canonical JSON bytes for derived files (stable across re-exports)."""
+    return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True).encode(
+        "utf-8"
+    )
+
+
 def atomic_write_json(path: str | Path, payload: Any) -> Path:
     """Write JSON atomically: temp file in the same dir + ``os.replace``.
 
@@ -207,7 +336,7 @@ def atomic_write_json(path: str | Path, payload: Any) -> Path:
     """
     dest = Path(path)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    text = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+    text = _dumps_canonical(payload).decode("utf-8")
     fd, tmp_name = tempfile.mkstemp(
         dir=str(dest.parent), prefix=dest.name + ".", suffix=".tmp"
     )
@@ -226,6 +355,24 @@ def atomic_write_json(path: str | Path, payload: Any) -> Path:
     return dest
 
 
+def _write_json_if_changed(path: str | Path, payload: Any) -> bool:
+    """Write `payload` to `path` atomically ONLY when content changed.
+
+    Returns True when the file was (re)written, False when the existing
+    bytes were already identical (rewrite skipped: derived JSON is never
+    rewritten wholesale). A missing file counts as changed.
+    """
+    dest = Path(path)
+    wanted = _dumps_canonical(payload)
+    try:
+        if dest.read_bytes() == wanted:
+            return False
+    except OSError:
+        pass  # missing/unreadable: fall through to the atomic write
+    atomic_write_json(dest, payload)
+    return True
+
+
 def export_manifest(
     rows: Sequence[Any],
     manifest_path: str | Path = DEFAULT_MANIFEST,
@@ -234,15 +381,17 @@ def export_manifest(
     """Regenerate BOTH derived JSON files from SQLite ledger rows, atomically.
 
     This is the ONLY sanctioned writer of the two JSON files. Each file is
-    written via :func:`atomic_write_json`; the manifest is replaced first,
-    then the seed state. Deterministic key/entry ordering makes re-exports
-    byte-identical (idempotent).
+    written via :func:`atomic_write_json` ONLY when its canonical content
+    changed; unchanged files are left byte- and mtime-identical (no wholesale
+    rewrite). Deterministic key/entry ordering makes re-exports idempotent.
     """
     manifest_payload = build_manifest_payload(rows)
     seed_payload = build_seed_state_payload(rows)
-    atomic_write_json(manifest_path, manifest_payload)
-    atomic_write_json(seed_state_path, seed_payload)
+    rewrote_manifest = _write_json_if_changed(manifest_path, manifest_payload)
+    rewrote_seed = _write_json_if_changed(seed_state_path, seed_payload)
     return {
         "manifest_entries": len(manifest_payload["entries"]),
         "state_keys": len(seed_payload),
+        "rewrote_manifest": rewrote_manifest,
+        "rewrote_seed_state": rewrote_seed,
     }

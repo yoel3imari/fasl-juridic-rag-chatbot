@@ -53,6 +53,7 @@ class LibraryImportFile(Base):
     )
     chunk_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     indexed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    artifact_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     quarantine_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

@@ -106,11 +106,19 @@ def test_reexport_is_idempotent(tmp_path: Path):
     out1 = export_manifest(rows, manifest, seed)
     first_manifest = manifest.read_bytes()
     first_seed = seed.read_bytes()
+    manifest_mtime = manifest.stat().st_mtime_ns
+    seed_mtime = seed.stat().st_mtime_ns
     out2 = export_manifest(rows, manifest, seed)
-    # Then: same summary + byte-identical files
-    assert out1 == out2 == {"manifest_entries": 2, "state_keys": 2}
+    # Then: first export wrote, second skipped the rewrite (no wholesale
+    # rewrite); files stay byte- AND mtime-identical
+    assert out1["manifest_entries"] == out2["manifest_entries"] == 2
+    assert out1["state_keys"] == out2["state_keys"] == 2
+    assert out1["rewrote_manifest"] is True and out1["rewrote_seed_state"] is True
+    assert out2["rewrote_manifest"] is False and out2["rewrote_seed_state"] is False
     assert manifest.read_bytes() == first_manifest
     assert seed.read_bytes() == first_seed
+    assert manifest.stat().st_mtime_ns == manifest_mtime
+    assert seed.stat().st_mtime_ns == seed_mtime
     payload = json.loads(first_manifest)
     assert [e["source"] for e in payload["entries"]] == ["A", "Z"]
     state = json.loads(first_seed)

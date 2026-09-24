@@ -9,6 +9,7 @@ decodes it independently of this module.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import os
@@ -102,3 +103,46 @@ def read_artifact(path: str | Path) -> Iterator[dict[str, Any]]:
             for line in text:
                 if line.strip():
                     yield json.loads(line)
+
+
+class ArtifactIntegrityError(ValueError):
+    """Raised when an artifact's bytes do not match the ledger sha256."""
+
+
+def sha256_file(path: str | Path) -> str:
+    """Stream SHA-256 of a file (artifacts included). Raises if missing."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        while True:
+            chunk = fh.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def verify_artifact(path: str | Path, expected_sha: str | None) -> str:
+    """Recompute the artifact sha256 and raise loudly on mismatch.
+
+    Returns the actual sha on success. ``None``/empty ``expected_sha``
+    (pre-todo-13 rows) raises: a missing sha is "needs re-extract", never
+    a silent pass.
+    """
+    if not expected_sha:
+        raise ArtifactIntegrityError(
+            f"{path}: no artifact_sha256 recorded; needs re-extract, not a pass"
+        )
+    actual = sha256_file(path)
+    if actual != expected_sha:
+        raise ArtifactIntegrityError(
+            f"{path}: artifact sha mismatch: expected {expected_sha}, got {actual}"
+        )
+    return actual
+
+
+def read_verified_artifact(
+    path: str | Path, expected_sha: str | None
+) -> Iterator[dict[str, Any]]:
+    """Verify the artifact sha BEFORE yielding a single record, then stream it."""
+    verify_artifact(path, expected_sha)
+    yield from read_artifact(path)

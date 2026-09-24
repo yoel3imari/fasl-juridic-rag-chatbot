@@ -38,7 +38,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.config import settings
-from app.library.artifacts import artifact_path_for, write_artifact
+from app.library.artifacts import artifact_path_for, sha256_file, write_artifact
 from app.library.bulk_state import single_writer
 from app.library.extract_worker import ExtractJob, ExtractResult, run_job
 
@@ -92,11 +92,16 @@ def _collect_jobs(
             continue
         if (
             row.extract_status == "extracted"
+            and getattr(row, "artifact_sha256", None)
             and artifact_path_for(adir, row.sha256).exists()
         ):
             skipped_done += 1  # resume: never redo finished work
             continue
-        if row.extract_status == "quarantined":
+        if row.extract_status == "extracted":
+            # Extracted but unverifiable (missing sha or missing artifact,
+            # e.g. pre-todo-13 rows): re-drive, never silently pass.
+            pass
+        elif row.extract_status == "quarantined":
             if (row.quarantine_reason or "").startswith(RETRIABLE_QUARANTINE_PREFIXES):
                 pass  # worker policy upgraded: re-drive this row
             else:
@@ -207,9 +212,11 @@ async def run_extract(
                         continue
                     if res.status == "extracted":
                         # Streaming write, one file at a time (never joined).
-                        write_artifact(
-                            iter(res.records), artifact_path_for(adir, row.sha256)
-                        )
+                        dest = artifact_path_for(adir, row.sha256)
+                        write_artifact(iter(res.records), dest)
+                        # Round-trip guard (todo 13): the ledger carries the
+                        # artifact's sha256 so reads can fail LOUDLY on tamper.
+                        row.artifact_sha256 = sha256_file(dest)
                         row.chunk_count = len(res.records)
                         row.quarantine_reason = None  # clear stale retry reason
                         set_file_stage_status(row, "extract_status", "extracted")
@@ -218,6 +225,7 @@ async def run_extract(
                         report["ocr_pages"] += res.ocr_pages
                     else:
                         row.chunk_count = 0
+                        row.artifact_sha256 = None  # no artifact: nothing to verify
                         row.quarantine_reason = res.quarantine_reason
                         set_file_stage_status(row, "extract_status", "quarantined")
                         report["quarantined"] += 1
