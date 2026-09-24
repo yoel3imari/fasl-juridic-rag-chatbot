@@ -21,6 +21,7 @@ out/
 frontend/test-results/
 frontend/playwright-report/
 backend/data/seed
+backend/data/library-artifacts/
 
 # OS / editor
 .DS_Store

@@ -19,6 +19,7 @@ dependencies = [
     "qdrant-client>=1.19.1",
     "pillow>=12.3.0",
     "pytesseract>=0.3.13",
+    "zstandard>=0.23",
     "pydantic-ai>=0.1",
     "respx>=0.23.1",
     "flashrank>=0.2.10",

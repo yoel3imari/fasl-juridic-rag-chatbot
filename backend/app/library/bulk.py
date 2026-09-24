@@ -25,14 +25,22 @@ async def _run_catalog(args: argparse.Namespace) -> dict[str, Any]:
     return await run_catalog_from_args(args)
 
 
+async def _run_extract(args: argparse.Namespace) -> dict[str, Any]:
+    from app.library.bulk_extract import run_extract_from_args
+
+    return await run_extract_from_args(args)
+
+
 def _register(sub: Any) -> dict[str, Handler]:
     """Register one subparser per stage module. Later todos add lines here."""
     from app.library.bulk_catalog import add_catalog_parser
+    from app.library.bulk_extract import add_extract_parser
 
     handlers: dict[str, Handler] = {}
     add_catalog_parser(sub)
     handlers["catalog"] = _run_catalog
-    # todo 12: add_extract_parser(sub); handlers["extract"] = _run_extract
+    add_extract_parser(sub)
+    handlers["extract"] = _run_extract
     # todo 16: add_run_parser(sub); handlers["run"] = _run_run
     return handlers
 
