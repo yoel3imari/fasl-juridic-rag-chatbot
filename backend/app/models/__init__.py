@@ -13,6 +13,11 @@ from app.models.conversation import Conversation, Message
 from app.models.document import Document, DocumentVersion
 from app.models.document_section import DocumentSection
 from app.models.draft import Draft, ReviewState
+from app.models.library_import import (
+    LibraryImportChunk,
+    LibraryImportFile,
+    LibraryImportRun,
+)
 from app.models.matter import Matter
 
 __all__ = [
@@ -23,6 +28,9 @@ __all__ = [
     "DocumentSection",
     "DocumentVersion",
     "Draft",
+    "LibraryImportChunk",
+    "LibraryImportFile",
+    "LibraryImportRun",
     "Matter",
     "Message",
     "ReviewState",
