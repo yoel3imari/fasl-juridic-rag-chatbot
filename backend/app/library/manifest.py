@@ -19,6 +19,8 @@ class ManifestEntry(BaseModel):
     hijri_date: Optional[str] = None
     language: Optional[str] = None
     coverage_note: Optional[str] = None
+    category: Optional[str] = None
+    file_sha: Optional[str] = None
 
     @field_validator("source")
     @classmethod

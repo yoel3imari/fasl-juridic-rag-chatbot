@@ -30,28 +30,77 @@ def load_manifest(path: str | Path = DEFAULT_MANIFEST) -> LibraryManifest:
     return LibraryManifest(**data)
 
 
+def _coerce_int(value: object, default: int = 0) -> int:
+    """Deterministic int coercion: None/garbage -> default, never raises."""
+    if value is None:
+        return default
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+
+
 def chunk_id(
-    source: str, version: str, edition: str, article_or_section: str | None, text: str
+    source: str,
+    version: str,
+    edition: str,
+    article_or_section: str | None,
+    text: str,
+    page: int | None = None,
+    ordinal: int | None = None,
 ) -> str:
+    """Deterministic chunk id preserving the legacy prefix.
+
+    Legacy prefix ``source:version:edition:article:hash`` is kept verbatim;
+    a deterministic ``:p<page>:o<ordinal>`` suffix keeps intra-file duplicate
+    article text distinct. ``page``/``ordinal`` default to 0 so legacy callers
+    (no page info) keep working and stay deterministic.
+    """
     h = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
-    return f"{source}:{version}:{edition}:{article_or_section or 'section'}:{h}"
+    prefix = f"{source}:{version}:{edition}:{article_or_section or 'section'}:{h}"
+    return f"{prefix}:p{_coerce_int(page)}:o{_coerce_int(ordinal)}"
 
 
-def build_provenance(entry, chunk) -> dict:
+def build_provenance(
+    entry,
+    chunk,
+    ordinal: int | None = None,
+    category: str | None = None,
+    file_sha: str | None = None,
+) -> dict:
+    edition = (
+        entry.edition.value if hasattr(entry.edition, "value") else str(entry.edition)
+    )
+    page = _coerce_int(getattr(chunk, "page", None))
+    hierarchy = dict(getattr(chunk, "hierarchy", None) or {})
+    ord_i = _coerce_int(ordinal)
+    cat = category if category is not None else (getattr(entry, "category", None) or "")
+    sha = file_sha if file_sha is not None else (getattr(entry, "file_sha", None) or "")
+    cid = chunk_id(
+        entry.source,
+        entry.version,
+        edition,
+        chunk.article_or_section,
+        chunk.text,
+        page=getattr(chunk, "page", None),
+        ordinal=ord_i,
+    )
     return {
         "source": entry.source,
         "version": entry.version,
-        "edition": entry.edition.value
-        if hasattr(entry.edition, "value")
-        else str(entry.edition),
+        "edition": edition,
         "pub_date": entry.pub_date,
         "doc_date": entry.doc_date,
         "hijri_date": entry.hijri_date,
         "language": entry.language,
         "article_or_section": chunk.article_or_section,
         "coverage_note": entry.coverage_note,
-        "hierarchy": chunk.hierarchy,
+        "hierarchy": hierarchy,
         "collection": "legal_authorities",  # never a matter collection
+        "page": page,
+        "chunk_id": cid,
+        "category": cat,
+        "file_sha": sha,
     }
 
 
@@ -67,17 +116,12 @@ def seed(manifest_path: str | Path = DEFAULT_MANIFEST, embed: bool = True) -> di
         key = f"{entry.source}@{entry.version}#{entry.edition.value if hasattr(entry.edition, 'value') else entry.edition}"
         chunks = extract_chunks(resolve_seed_path(entry.file_path))
         records = []
-        for chunk in chunks:
-            prov = build_provenance(entry, chunk)
+        for ordinal, chunk in enumerate(chunks):
+            prov = build_provenance(entry, chunk, ordinal=ordinal)
             rec = {
-                "id": chunk_id(
-                    entry.source,
-                    entry.version,
-                    str(prov["edition"]),
-                    chunk.article_or_section,
-                    chunk.text,
-                ),
+                "id": prov["chunk_id"],
                 **prov,
+                "text": chunk.text,
             }
             records.append(rec)
         embeddings: list = []

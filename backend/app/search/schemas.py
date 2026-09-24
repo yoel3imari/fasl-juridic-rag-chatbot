@@ -6,7 +6,7 @@ matter_evidence point shape is defined once, never duplicated.
 
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import Any, NotRequired, TypedDict
 
 EVIDENCE_COLLECTION: str = "matter_evidence"
 AUTHORITY_COLLECTION: str = "legal_authorities"
@@ -33,7 +33,13 @@ class EvidencePoint(MatterPayload):
 
 
 class AuthorityPayload(TypedDict):
-    """Exact payload for legal_authorities points (version/disclosure)."""
+    """Exact payload for legal_authorities points (version/disclosure).
+
+    New keys (page/hierarchy/chunk_id/category/file_sha/hijri_date/
+    coverage_note) are NotRequired so producers that do not yet supply them
+    (pre-chunker catalog) keep type-checking; _authority_payload fills
+    deterministic defaults at the boundary.
+    """
 
     source: str
     version: str
@@ -42,6 +48,13 @@ class AuthorityPayload(TypedDict):
     doc_date: str | None
     language: str
     article_or_section: str
+    page: NotRequired[int]
+    hierarchy: NotRequired[dict[str, Any]]
+    chunk_id: NotRequired[str]
+    category: NotRequired[str]
+    file_sha: NotRequired[str]
+    hijri_date: NotRequired[str | None]
+    coverage_note: NotRequired[str | None]
 
 
 class AuthorityPoint(AuthorityPayload):

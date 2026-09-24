@@ -203,6 +203,11 @@ def _evidence_payload(p: dict) -> dict:
 
 
 def _authority_payload(p: dict) -> dict:
+    page = p.get("page", 0)
+    try:
+        page = int(page) if page is not None else 0
+    except (TypeError, ValueError):
+        page = 0
     return {
         "source": p["source"],
         "version": p["version"],
@@ -212,4 +217,11 @@ def _authority_payload(p: dict) -> dict:
         "language": p.get("language", ""),
         "article_or_section": p["article_or_section"],
         "text": p.get("text", ""),
+        "page": page,
+        "hierarchy": dict(p.get("hierarchy") or {}),
+        "chunk_id": p.get("chunk_id") or p.get("id", ""),
+        "category": p.get("category", ""),
+        "file_sha": p.get("file_sha", ""),
+        "hijri_date": p.get("hijri_date"),
+        "coverage_note": p.get("coverage_note"),
     }
