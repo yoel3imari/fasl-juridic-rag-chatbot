@@ -5,7 +5,9 @@ here): each subcommand lives in its own ``app.library.bulk_*`` module and
 registers ONE entry below. Keep this file to parsing + dispatch only - no
 stage logic, so parallel todos never edit the same function body.
 
-Available subcommands: ``catalog`` (todo 10).
+Available subcommands: ``catalog`` (todo 10), ``extract`` (todo 12),
+``migrate`` (todo 8), ``reembed-matter`` (todo 9), ``embed``/``index``/``run``
+(todo 16).
 """
 
 from __future__ import annotations
@@ -31,6 +33,24 @@ async def _run_extract(args: argparse.Namespace) -> dict[str, Any]:
     return await run_extract_from_args(args)
 
 
+async def _run_embed(args: argparse.Namespace) -> dict[str, Any]:
+    from app.library.bulk_run import run_embed_from_args
+
+    return await run_embed_from_args(args)
+
+
+async def _run_index(args: argparse.Namespace) -> dict[str, Any]:
+    from app.library.bulk_run import run_index_from_args
+
+    return await run_index_from_args(args)
+
+
+async def _run_run(args: argparse.Namespace) -> dict[str, Any]:
+    from app.library.bulk_run import run_run_from_args
+
+    return await run_run_from_args(args)
+
+
 async def _run_reembed(args: argparse.Namespace) -> dict[str, Any]:
     from app.library.bulk_reembed import run_reembed_from_args
 
@@ -49,6 +69,7 @@ def _register(sub: Any) -> dict[str, Handler]:
     from app.library.bulk_extract import add_extract_parser
     from app.library.bulk_migrate import add_migrate_parser
     from app.library.bulk_reembed import add_reembed_parser
+    from app.library.bulk_run import add_embed_parser, add_index_parser, add_run_parser
 
     handlers: dict[str, Handler] = {}
     add_catalog_parser(sub)
@@ -59,7 +80,12 @@ def _register(sub: Any) -> dict[str, Handler]:
     handlers["migrate"] = _run_migrate
     add_reembed_parser(sub)
     handlers["reembed-matter"] = _run_reembed
-    # todo 16: add_run_parser(sub); handlers["run"] = _run_run
+    add_embed_parser(sub)
+    handlers["embed"] = _run_embed
+    add_index_parser(sub)
+    handlers["index"] = _run_index
+    add_run_parser(sub)
+    handlers["run"] = _run_run
     return handlers
 
 
