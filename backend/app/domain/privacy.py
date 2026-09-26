@@ -8,6 +8,10 @@ from app.llm.errors import ConsentRequiredError, PrivacyViolationError
 
 logger = logging.getLogger(__name__)
 
+# Locality is classified BY NAME against these two frozensets. That name-based
+# lookup is the exact seam the deferred user-defined-provider plan replaces with
+# a fail-closed, user-declared locality field. Marked, deliberately unchanged
+# here: this plan freezes provider values and adds no capability.
 EXTERNAL_PROVIDERS: frozenset[str] = frozenset(
     {"openai", "groq", "anthropic", "google", "openrouter"}
 )
@@ -18,7 +22,12 @@ EVIDENCE_MARKERS: tuple[str, ...] = ("[matter:", "\u00b6")
 
 
 def is_external_provider(provider: str) -> bool:
-    """True for cloud providers; local providers (ollama) always pass."""
+    """True for cloud providers; local providers (ollama) always pass.
+
+    Seam: the name-based membership test below is replaced by the deferred
+    user-defined-provider plan, which declares locality per provider record
+    (fail-closed default) instead of inferring it from the provider string.
+    """
     return provider.strip().lower() in EXTERNAL_PROVIDERS
 
 

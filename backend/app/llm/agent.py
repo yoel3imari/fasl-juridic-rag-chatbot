@@ -6,8 +6,8 @@ import os
 from typing import Any
 
 from app.config import settings
+from app.domain.privacy import EXTERNAL_PROVIDERS, LOCAL_PROVIDERS
 from app.llm.errors import InvalidModelError
-from app.llm.privacy import EXTERNAL_PROVIDERS, LOCAL_PROVIDERS
 
 KNOWN_PROVIDERS: frozenset[str] = EXTERNAL_PROVIDERS | LOCAL_PROVIDERS
 

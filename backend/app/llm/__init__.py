@@ -1,5 +1,13 @@
 """LLM layer: provider-agnostic agent factory + matter-privacy guard."""
 
+from app.domain.privacy import (
+    EVIDENCE_MARKERS,
+    EXTERNAL_PROVIDERS,
+    LOCAL_PROVIDERS,
+    check_privacy,
+    contains_matter_evidence,
+    is_external_provider,
+)
 from app.llm.agent import (
     KNOWN_PROVIDERS,
     build_model_string,
@@ -11,14 +19,6 @@ from app.llm.errors import (
     InvalidModelError,
     PrivacyViolationError,
     ProviderUnreachableError,
-)
-from app.llm.privacy import (
-    EVIDENCE_MARKERS,
-    EXTERNAL_PROVIDERS,
-    LOCAL_PROVIDERS,
-    check_privacy,
-    contains_matter_evidence,
-    is_external_provider,
 )
 
 __all__ = [
