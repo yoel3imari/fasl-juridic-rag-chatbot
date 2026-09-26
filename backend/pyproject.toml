@@ -4,7 +4,11 @@ version = "0.1.0"
 description = "Moroccan Legal RAG - FastAPI backend"
 requires-python = ">=3.11"
 dependencies = [
-    "fastapi>=0.115",
+    # Pinned to the installed minor. The chat SSE path (api/v1/chat.py) mutates the
+    # get_db session *inside* StreamingResponse generators, so the dependency
+    # teardown timing is load-bearing; see plan todo 7 evidence for the measured
+    # behaviour on this exact version. Do not widen without re-measuring.
+    "fastapi>=0.141,<0.142",
     "uvicorn[standard]>=0.30",
     "pydantic-settings>=2.5",
     "sqlalchemy[asyncio]>=2.0",
