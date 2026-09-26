@@ -155,3 +155,34 @@ ban-relative-imports = "parents"
 "tests/test_ingestion.py" = ["E501", "I001", "UP012"]
 "tests/test_library_seed.py" = ["E401", "F401", "F811", "I001", "UP012"]
 "tests/test_matter_isolation.py" = ["I001"]
+
+# import-linter (todo 3). The `layers` order encodes the plan's layer rules as a
+# total order; `cli` sits directly under `api` because it may import everything
+# except `api`. `domain` is the bottom layer. Optional layers are parenthesised
+# so a not-yet-created package is skipped instead of raising; drop the
+# parentheses in the todo that creates that package (8 -> domain, 26 -> services,
+# 10 -> infrastructure, 39 -> cli). `include_external_packages` is required for
+# the forbidden contract to see the `fastapi`/`sqlalchemy` nodes.
+[tool.importlinter]
+root_package = "app"
+include_external_packages = true
+unmatched_ignore_imports_alerting = false
+
+[[tool.importlinter.contracts]]
+name = "Layer cake"
+type = "layers"
+layers = [
+    "app.api",
+    "(app.cli)",
+    "(app.services)",
+    "(app.infrastructure)",
+    "app.repositories",
+    "app.models",
+    "(app.domain)",
+]
+
+[[tool.importlinter.contracts]]
+name = "Domain purity"
+type = "forbidden"
+source_modules = ["app.domain.**"]
+forbidden_modules = ["fastapi", "sqlalchemy"]
