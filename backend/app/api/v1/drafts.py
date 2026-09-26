@@ -27,7 +27,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import drafts as drafts_mod
 from app import llm as llm_mod
 from app.api.v1.draft_schemas import (
     DraftCreateIn,
@@ -36,6 +35,7 @@ from app.api.v1.draft_schemas import (
     TransitionIn,
 )
 from app.config import Settings
+from app.domain import drafts as drafts_mod
 from app.models.analysis import Analysis
 from app.models.base import get_db
 from app.models.conversation import Conversation, Message

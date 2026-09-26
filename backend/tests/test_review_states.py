@@ -192,7 +192,7 @@ def test_acknowledged_never_renders_lawyer_review(
     client: TestClient, db_session_factory
 ) -> None:
     """Regular-user acknowledgement must never display 'lawyer review'."""
-    from app.drafts import build_draft  # drafting engine module exists
+    from app.domain.drafts import build_draft  # drafting engine module exists
 
     assert build_draft
     matter_id = _make_analysed_matter(client, db_session_factory)
