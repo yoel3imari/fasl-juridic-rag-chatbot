@@ -310,8 +310,8 @@ async def test_unknown_classification_is_reviewable() -> None:
 
 async def test_low_ocr_confidence_flagged_reviewable(monkeypatch) -> None:
     """Scanned page below OCR threshold → reviewable with its real confidence score."""
-    from app.ingestion import ocr as ocr_mod
-    from app.ingestion.ocr import OcrResult
+    from app.infrastructure.ocr import tesseract as ocr_mod
+    from app.infrastructure.ocr.tesseract import OcrResult
     from app.ingestion.pipeline import ingest_upload
 
     def _fake_ocr(_: bytes, *, page_no: int) -> OcrResult:
@@ -742,7 +742,7 @@ async def test_ocr_uses_dict_output_with_languages_and_timeout(monkeypatch) -> N
     """OCR calls tesseract with DICT output (no pandas), ara+fra, and a timeout."""
     import shutil
     import pytesseract
-    from app.ingestion import ocr as ocr_mod
+    from app.infrastructure.ocr import tesseract as ocr_mod
 
     seen: dict = {}
 
@@ -770,7 +770,7 @@ async def test_ocr_missing_language_data_is_reviewable(monkeypatch) -> None:
     """Missing tesseract language data surfaces as reviewable, never a 500."""
     import shutil
     import pytesseract
-    from app.ingestion import ocr as ocr_mod
+    from app.infrastructure.ocr import tesseract as ocr_mod
     from app.domain.ingestion.errors import OcrUnavailableError
 
     def _raise_missing(image, **kwargs):

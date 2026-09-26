@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Final
 
-from app.ingestion import ocr as ocr_mod
+from app.infrastructure.ocr import tesseract as ocr_mod
 from app.domain.ingestion.errors import CorruptFileError, OcrUnavailableError
 from app.domain.ingestion.schemas import PageText
 
