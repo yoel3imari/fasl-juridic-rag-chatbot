@@ -4,7 +4,7 @@ Reads backend/data/glossary.json. The file holds DEFINITIONAL entries only
 (term -> plain Arabic + French explanation); it carries no legal article
 text, article numbers, or publication metadata, and must never be cited as
 authority. Path resolves via the parents[] pattern: this file lives at
-backend/app/analysis/, so backend/ is parents[2].
+backend/app/domain/analysis/, so backend/ is parents[3].
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from typing import Any
 
 def glossary_path() -> Path:
     """Absolute path to backend/data/glossary.json."""
-    return Path(__file__).parents[2] / "data" / "glossary.json"
+    return Path(__file__).parents[3] / "data" / "glossary.json"
 
 
 @lru_cache(maxsize=1)
@@ -37,6 +37,5 @@ def match_terms(text: str) -> list[dict[str, Any]]:
     return [
         e
         for e in load_glossary()
-        if str(e.get("term", "")).lower() in lowered
-        or (e.get("ar") and str(e["ar"]) in text)
+        if str(e.get("term", "")).lower() in lowered or (e.get("ar") and str(e["ar"]) in text)
     ]

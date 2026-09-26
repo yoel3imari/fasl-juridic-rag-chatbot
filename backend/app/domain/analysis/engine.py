@@ -45,7 +45,7 @@ from __future__ import annotations
 import re
 from typing import Any, Literal
 
-from app.analysis.glossary import match_terms
+from app.domain.analysis.glossary import match_terms
 
 Risk = Literal["High", "Medium", "Low"]
 

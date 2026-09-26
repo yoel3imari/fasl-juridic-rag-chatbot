@@ -101,7 +101,6 @@ ban-relative-imports = "parents"
 # EXCEPT app/domain/** and app/services/** re-enables it here. A file placed
 # under domain/ or services/ is enforced automatically on arrival. NOTE: ruff globs
 # let `*` cross `/`, so root modules are listed as exact paths, never app/*.py.
-"app/analysis/**" = ["TID251"]
 "app/api/**" = ["TID251"]
 "app/cli/**" = ["TID251"]
 "app/config/**" = ["TID251"]
@@ -124,7 +123,7 @@ ban-relative-imports = "parents"
 "alembic/versions/0003_draft_review_fields.py" = ["I001"]
 "alembic/versions/0004_library_bulk_import.py" = ["I001"]
 "alembic/versions/0005_artifact_sha256.py" = ["I001"]
-"app/analysis/engine.py" = ["E501"]
+"app/domain/analysis/engine.py" = ["E501"]
 "app/api/v1/chat.py" = ["E501"]
 "app/api/v1/drafts.py" = ["UP017"]
 "app/api/v1/library.py" = ["B905", "E501", "F401"]
@@ -184,7 +183,7 @@ layers = [
     "(app.infrastructure)",
     "app.repositories",
     "app.models",
-    "(app.domain)",
+    "app.domain",
 ]
 
 [[tool.importlinter.contracts]]

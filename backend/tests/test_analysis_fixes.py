@@ -11,7 +11,7 @@ Pure-engine tests (no DB). SYNTHETIC test data only.
 
 from __future__ import annotations
 
-from app.analysis.engine import build_analysis
+from app.domain.analysis.engine import build_analysis
 
 LONG_TEXT = (
     "Termination letter. Mr. Karim Bennani, your employment contract is terminated "

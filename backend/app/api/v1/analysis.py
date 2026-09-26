@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.analysis.engine import build_analysis
+from app.domain.analysis.engine import build_analysis
 from app.models.analysis import Analysis
 from app.models.base import get_db
 from app.models.conversation import Conversation, Message

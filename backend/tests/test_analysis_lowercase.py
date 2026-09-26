@@ -6,7 +6,7 @@ be case-insensitive. Pure-engine test, no DB. SYNTHETIC test data only.
 
 from __future__ import annotations
 
-from app.analysis.engine import build_analysis
+from app.domain.analysis.engine import build_analysis
 
 LOWERED = (
     "termination letter. mr. karim bennani, your employment contract is terminated "

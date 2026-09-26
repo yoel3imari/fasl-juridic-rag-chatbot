@@ -198,7 +198,7 @@ def _make_matter_with_contradiction(db_session_factory) -> int:
 
 def test_gaps_list_requests_payslips(client: TestClient, db_session_factory) -> None:
     """Termination letter alone → gaps mention payslips/correspondence/contract."""
-    from app.analysis import engine as eng_mod
+    from app.domain.analysis import engine as eng_mod
 
     assert eng_mod  # analysis engine module exists
     matter_id = _make_matter_with_letter(db_session_factory)
