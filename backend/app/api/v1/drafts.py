@@ -24,7 +24,6 @@ from datetime import datetime, timezone
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import llm as llm_mod
@@ -36,11 +35,9 @@ from app.api.v1.draft_schemas import (
 )
 from app.config import Settings
 from app.domain import drafts as drafts_mod
-from app.models.analysis import Analysis
 from app.models.base import get_db
-from app.models.conversation import Conversation, Message
 from app.models.draft import Draft, ReviewState
-from app.models.matter import Matter
+from app.repositories.draft import DraftRepository
 
 router = APIRouter(tags=["drafts"])
 
@@ -68,46 +65,6 @@ def _to_out(
         reviewed_at=row.reviewed_at,
         polished=polished,
     )
-
-
-async def _latest_analysis(session: AsyncSession, matter_id: int) -> Analysis | None:
-    return (
-        (
-            await session.execute(
-                select(Analysis)
-                .where(Analysis.matter_id == matter_id)
-                .order_by(Analysis.id.desc())
-                .limit(1)
-            )
-        )
-        .scalars()
-        .first()
-    )
-
-
-async def _stored_authority(
-    session: AsyncSession, matter_id: int
-) -> list[dict[str, Any]]:
-    rows = (
-        (
-            await session.execute(
-                select(Message.citations_json)
-                .join(Conversation, Message.conversation_id == Conversation.id)
-                .where(
-                    Conversation.matter_id == matter_id,
-                    Message.citations_json.is_not(None),
-                )
-                .order_by(Message.id)
-            )
-        )
-        .scalars()
-        .all()
-    )
-    out: list[dict[str, Any]] = []
-    for cell in rows:
-        if isinstance(cell, list):
-            out.extend(c for c in cell if isinstance(c, dict))
-    return out
 
 
 async def _polish_text(text: str, settings: Settings) -> tuple[str, bool]:
@@ -146,18 +103,18 @@ async def create_draft(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"unknown draft_type: {body.draft_type!r}",
             )
-        matter = await session.get(Matter, matter_id)
-        if matter is None:
+        repo = DraftRepository(session)
+        if not await repo.matter_exists(matter_id):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="matter not found"
             )
-        analysis = await _latest_analysis(session, matter_id)
+        analysis = await repo.latest_analysis(matter_id)
         if analysis is None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="no analysis for this matter; POST analysis first",
             )
-        stored = await _stored_authority(session, matter_id)
+        stored = await repo.stored_authority(matter_id)
         text, citations = drafts_mod.build_draft(
             body.draft_type,
             dict(analysis.content_json),
@@ -188,14 +145,7 @@ async def create_draft(
                     status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)
                 ) from exc
             text, polished = await _polish_text(text, settings)
-        row = Draft(
-            matter_id=matter_id,
-            draft_type=body.draft_type,
-            content=text,
-            review_state=ReviewState.DRAFT,
-        )
-        session.add(row)
-        await session.flush()
+        row = await repo.create(matter_id, body.draft_type, text)
         await session.commit()
     except HTTPException:
         raise
@@ -214,7 +164,8 @@ async def _apply_transition(
     """Shared transition core: validate → persist → render (citations rebuilt)."""
     to_state, reviewer = transition.to_state, transition.reviewer
     try:
-        row = await session.get(Draft, draft_id)
+        repo = DraftRepository(session)
+        row = await repo.get(draft_id)
         if row is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="draft not found"
@@ -238,9 +189,9 @@ async def _apply_transition(
         if new_state == ReviewState.LAWYER_REVIEWED.value:
             row.reviewer = (reviewer or "").strip()
             row.reviewed_at = datetime.now(timezone.utc)
-        analysis = await _latest_analysis(session, row.matter_id)
+        analysis = await repo.latest_analysis(row.matter_id)
         content_json = dict(analysis.content_json) if analysis is not None else {}
-        stored = await _stored_authority(session, row.matter_id)
+        stored = await repo.stored_authority(row.matter_id)
         _text, citations = drafts_mod.build_draft(
             row.draft_type, content_json, stored_authority=stored
         )
