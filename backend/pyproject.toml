@@ -92,6 +92,16 @@ ban-relative-imports = "parents"
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "fastapi".msg = "domain must not import fastapi"
 "sqlalchemy".msg = "domain must not import sqlalchemy"
+"pydantic".msg = "domain must not import pydantic"
+"pydantic_ai".msg = "domain must not import pydantic_ai"
+"qdrant_client".msg = "domain must not import qdrant_client"
+"httpx".msg = "domain must not import httpx"
+"flashrank".msg = "domain must not import flashrank"
+"pytesseract".msg = "domain must not import pytesseract"
+"fitz".msg = "domain must not import fitz"
+"docx".msg = "domain must not import docx"
+"zstandard".msg = "domain must not import zstandard"
+"PIL".msg = "domain must not import PIL"
 
 # Baseline: 141 pre-existing violations across 43 files, recorded at plan todo 1.
 # Pinned per file+code so newly introduced violations are still reported.
@@ -109,7 +119,6 @@ ban-relative-imports = "parents"
 "app/library/**" = ["TID251"]
 "app/llm/**" = ["TID251"]
 "app/models/**" = ["TID251"]
-"app/rag/**" = ["TID251"]
 "app/repositories/**" = ["TID251"]
 "app/schemas/**" = ["TID251"]
 "app/search/**" = ["TID251"]
@@ -180,7 +189,7 @@ layers = [
     "app.api",
     "(app.cli)",
     "(app.services)",
-    "(app.infrastructure)",
+    "app.infrastructure",
     "app.repositories",
     "app.models",
     "app.domain",
@@ -190,7 +199,28 @@ layers = [
 name = "Domain purity"
 type = "forbidden"
 source_modules = ["app.domain.**"]
-forbidden_modules = ["fastapi", "sqlalchemy"]
+# The layer rule is "domain may import only domain and stdlib". `fastapi` and
+# `sqlalchemy` are the framework/ORM pair; the rest are the third-party model,
+# store, document and AI-SDK clients that waves 2-7 push behind
+# `infrastructure/`. Without these the contract is decorative: todo 10's own QA
+# (importing `flashrank` into app/domain/rerank.py) went uncaught.
+forbidden_modules = [
+    "fastapi",
+    "sqlalchemy",
+    "pydantic",
+    "pydantic_ai",
+    "qdrant_client",
+    "httpx",
+    "flashrank",
+    "pytesseract",
+    "fitz",
+    "docx",
+    "zstandard",
+    "PIL",
+    "aiofile",
+    "openai",
+    "anthropic",
+]
 
 [tool.pyright]
 typeCheckingMode = "standard"
