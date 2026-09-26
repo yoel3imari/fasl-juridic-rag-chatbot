@@ -16,6 +16,7 @@ from app.infrastructure.qdrant.store import QdrantStore
 from app.library.extractor import extract_chunks
 from app.library.manifest import EditionType, ManifestEntry
 from app.library.seeder import build_provenance
+from app.repositories.library_import import read_ledger_summary, zero_ledger_summary
 
 router = APIRouter(prefix="/api/v1/library", tags=["library"])
 
@@ -48,92 +49,18 @@ def _ledger_db_path() -> Path | None:
     return candidate
 
 
-def _zero_totals() -> dict:
-    return {
-        "files": 0,
-        "indexed": 0,
-        "extracted": 0,
-        "embedded": 0,
-        "chunks": 0,
-        "chunks_indexed": 0,
-    }
-
-
 def _zero_summary() -> dict:
-    return {
-        "totals": _zero_totals(),
-        "by_category": {},
-        "by_status": {},
-        "by_edition": {},
-    }
-
-
-def _read_ledger_summary_sync(db_path: Path) -> dict:
-    """Aggregate file counts from the SQLite ledger (read-only, pure read).
-
-    Raises OSError/sqlite3.Error when the ledger is missing or unreadable;
-    the caller converts that into a zero summary + gap, never a 500.
-    """
-    import sqlite3
-
-    summary = _zero_summary()
-    uri = f"file:{db_path}?mode=ro"
-    con = sqlite3.connect(uri, uri=True)
-    try:
-        totals = summary["totals"]
-        totals["files"] = con.execute(
-            "SELECT COUNT(*) FROM library_import_files"
-        ).fetchone()[0]
-        for stage in (
-            "parse_status",
-            "extract_status",
-            "embed_status",
-            "index_status",
-        ):
-            rows = con.execute(
-                f"SELECT {stage}, COUNT(*) FROM library_import_files "  # noqa: S608
-                f"GROUP BY {stage}"  # noqa: S608
-            ).fetchall()
-            summary["by_status"][stage] = {s or "unknown": n for s, n in rows}
-        totals["indexed"] = (
-            summary["by_status"].get("index_status", {}).get("indexed", 0)
-        )
-        totals["extracted"] = (
-            summary["by_status"].get("extract_status", {}).get("extracted", 0)
-        )
-        totals["embedded"] = (
-            summary["by_status"].get("embed_status", {}).get("embedded", 0)
-        )
-        for label, cleaned in (
-            ("category", "unparsed"),
-            ("edition", "unparsed"),
-        ):
-            rows = con.execute(
-                f"SELECT {label}, COUNT(*) FROM library_import_files "  # noqa: S608
-                f"GROUP BY {label}"  # noqa: S608
-            ).fetchall()
-            key = f"by_{label}"
-            summary[key] = {(v or cleaned): n for v, n in rows}
-        row = con.execute(
-            "SELECT COALESCE(SUM(chunk_count), 0), "
-            "COALESCE(SUM(indexed_count), 0) FROM library_import_files"
-        ).fetchone()
-        totals["chunks"] = int(row[0])
-        totals["chunks_indexed"] = int(row[1])
-    finally:
-        con.close()
-    return summary
+    """The all-zero ledger aggregate; the shape lives in the repository."""
+    return zero_ledger_summary()
 
 
 async def _ledger_summary() -> tuple[dict, str | None]:
     """Return (summary, gap): read-only ledger aggregate, zeroed on failure."""
-    from anyio import to_thread
-
     db_path = _ledger_db_path()
     if db_path is None or not db_path.exists():
         return _zero_summary(), LEDGER_MISSING_GAP
     try:
-        summary = await to_thread.run_sync(_read_ledger_summary_sync, db_path)
+        summary = await read_ledger_summary(db_path)
     except Exception:
         return _zero_summary(), LEDGER_MISSING_GAP
     return summary, None
