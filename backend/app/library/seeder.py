@@ -6,7 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from app.library.embedder import CrispEmbedClient
+from app.infrastructure.embeddings.client import CrispEmbedClient
 from app.library.extractor import extract_chunks
 from app.library.manifest import LibraryManifest
 

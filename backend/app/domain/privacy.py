@@ -3,10 +3,43 @@
 from __future__ import annotations
 
 import logging
-
-from app.llm.errors import ConsentRequiredError, PrivacyViolationError
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class PrivacyViolationError(Exception):
+    """Strict-mode block: matter evidence must not reach an external provider.
+
+    403-equivalent: the caller (HTTP/WS layer) translates this into a
+    403 status code or a structured error frame with redaction guidance.
+    """
+
+    provider: str
+    detail: str = "prompt contains matter evidence"
+
+    def __str__(self) -> str:
+        return (
+            f"403 matter-privacy violation: {self.detail} "
+            f"(provider={self.provider!r}). "
+            "Redact matter evidence or switch to a local provider "
+            "(LLM_PROVIDER=ollama) before retrying."
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ConsentRequiredError(Exception):
+    """Non-strict mode: external send needs explicit per-request consent."""
+
+    provider: str
+
+    def __str__(self) -> str:
+        return (
+            f"explicit per-request consent is required before sending "
+            f"matter evidence to external provider {self.provider!r} "
+            "(set consent=true on the request)"
+        )
 
 # Locality is classified BY NAME against these two frozensets. That name-based
 # lookup is the exact seam the deferred user-defined-provider plan replaces with

@@ -4,20 +4,20 @@ from app.domain.privacy import (
     EVIDENCE_MARKERS,
     EXTERNAL_PROVIDERS,
     LOCAL_PROVIDERS,
+    ConsentRequiredError,
+    PrivacyViolationError,
     check_privacy,
     contains_matter_evidence,
     is_external_provider,
 )
-from app.llm.agent import (
+from app.infrastructure.llm.agent import (
     KNOWN_PROVIDERS,
     build_model_string,
     get_agent,
     get_agent_with_tools,
 )
-from app.llm.errors import (
-    ConsentRequiredError,
+from app.infrastructure.llm.errors import (
     InvalidModelError,
-    PrivacyViolationError,
     ProviderUnreachableError,
 )
 

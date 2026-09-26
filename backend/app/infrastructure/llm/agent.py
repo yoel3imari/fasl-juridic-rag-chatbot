@@ -7,7 +7,7 @@ from typing import Any
 
 from app.config import settings
 from app.domain.privacy import EXTERNAL_PROVIDERS, LOCAL_PROVIDERS
-from app.llm.errors import InvalidModelError
+from app.infrastructure.llm.errors import InvalidModelError
 
 KNOWN_PROVIDERS: frozenset[str] = EXTERNAL_PROVIDERS | LOCAL_PROVIDERS
 

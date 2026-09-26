@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app import settings_store
 from app.config import Settings
-from app.llm.agent import KNOWN_PROVIDERS
+from app.infrastructure.llm.agent import KNOWN_PROVIDERS
 
 router = APIRouter(prefix="/api/v1/settings", tags=["settings"])
 

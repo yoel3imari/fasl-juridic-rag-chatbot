@@ -194,7 +194,7 @@ def _sentinel_problem(
 
 def _make_embedder(embed_url: str | None, model: str):
     """Seam: live CrispEmbed client (tests inject a fake factory)."""
-    from app.library.embedder import CrispEmbedClient
+    from app.infrastructure.embeddings.client import CrispEmbedClient
 
     return CrispEmbedClient(base_url=embed_url, model=model)
 
@@ -405,7 +405,7 @@ async def ensure_embed(
     report and NEVER sent. Cache-first resume: vectors already in the
     per-file cache mark their rows embedded without a server call.
     """
-    from app.library.embedder import estimate_eta_seconds
+    from app.infrastructure.embeddings.client import estimate_eta_seconds
 
     adir = Path(artifact_dir)
     safe_tokens = _served_safe_tokens()

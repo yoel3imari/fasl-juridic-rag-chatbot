@@ -136,7 +136,7 @@ def test_agent_injects_stored_keys(
     settings_store.save_llm_settings(api_keys={"openai": "sk-inject-abcd"})
     for var in ("OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
         monkeypatch.delenv(var, raising=False)
-    from app.llm import agent as agent_mod
+    from app.infrastructure.llm import agent as agent_mod
 
     seen: dict[str, Any] = {}
 
@@ -156,7 +156,7 @@ def test_agent_does_not_override_existing_env(
 ) -> None:
     settings_store.save_llm_settings(api_keys={"groq": "gsk-stored"})
     monkeypatch.setenv("GROQ_API_KEY", "gsk-env")
-    from app.llm import agent as agent_mod
+    from app.infrastructure.llm import agent as agent_mod
 
     class _FakeAgent:
         def __init__(self, model_string: str) -> None:
@@ -173,7 +173,7 @@ def test_agent_injects_google_both_vars(
     settings_store.save_llm_settings(api_keys={"google": "gem-key-1234"})
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-    from app.llm import agent as agent_mod
+    from app.infrastructure.llm import agent as agent_mod
 
     class _FakeAgent:
         def __init__(self, model_string: str) -> None:

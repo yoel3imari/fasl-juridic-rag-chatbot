@@ -248,7 +248,7 @@ async def _embed_and_index(
     if not sections:
         return 0, None
     try:
-        from app.library.embedder import CrispEmbedClient
+        from app.infrastructure.embeddings.client import CrispEmbedClient
 
         vectors = await CrispEmbedClient().embed([s.normalized_text for s in sections])
         if len(vectors) != len(sections):

@@ -311,7 +311,7 @@ def build_sample(
 def _sanitize(text: str) -> str:
     """Payload-copy sanitization for the CrispEmbed naive string parser.
 
-    Mirrors ``app.library.embedder.sanitize_request_text``: stored/sampled
+    Mirrors ``app.infrastructure.embeddings.client.sanitize_request_text``: stored/sampled
     text is untouched, only the wire copy is sanitized.
     """
     return text.replace('"', "'").replace("]", ")")

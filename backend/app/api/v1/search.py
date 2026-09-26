@@ -35,7 +35,7 @@ def get_store() -> svc.Store:
 
 def get_embedder() -> svc.Embedder:
     """Factory seam: CrispEmbed HTTP client (model from settings)."""
-    from app.library.embedder import CrispEmbedClient
+    from app.infrastructure.embeddings.client import CrispEmbedClient
 
     return CrispEmbedClient()  # type: ignore[return-value]
 

@@ -277,7 +277,7 @@ async def run_reembed(args: argparse.Namespace) -> dict[str, Any]:
     # --- Phase 1: embed EVERYTHING before any upsert ---------------------
     # A mid-run embedding failure therefore leaves zero Qdrant writes and
     # zero row changes; only a `failed` sentinel is recorded.
-    from app.library.embedder import CrispEmbedClient
+    from app.infrastructure.embeddings.client import CrispEmbedClient
 
     embedder = CrispEmbedClient(base_url=embed_url, model=model)
     embedded: list[tuple[dict[str, Any], list[list[float]]]] = []

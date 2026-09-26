@@ -12,7 +12,7 @@ import httpx
 import pytest
 import respx
 
-from app.library import embedder as embedder_mod
+from app.infrastructure.embeddings import client as embedder_mod
 from app.library.bulk_state import set_chunk_status
 
 

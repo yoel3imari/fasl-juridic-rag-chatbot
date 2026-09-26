@@ -400,7 +400,7 @@ async def test_cross_matter_isolation(monkeypatch) -> None:
     """Sections indexed for matter A are never visible from matter B."""
     from app.ingestion import indexer as indexer_mod
     from app.ingestion.pipeline import ingest_upload
-    from app.library import embedder as embedder_mod
+    from app.infrastructure.embeddings import client as embedder_mod
     from app.repositories.matter import MatterRepository
 
     seen: list[dict] = []
@@ -494,7 +494,7 @@ async def test_qdrant_payload_targets_matter_evidence_only(monkeypatch) -> None:
     """Indexing targets matter_evidence collection; authority collection never used."""
     from app.ingestion import indexer as indexer_mod
     from app.ingestion.pipeline import ingest_upload
-    from app.library import embedder as embedder_mod
+    from app.infrastructure.embeddings import client as embedder_mod
 
     calls: list[tuple[str, list[dict]]] = []
 
@@ -551,7 +551,7 @@ async def test_index_failure_never_reported_indexed(monkeypatch) -> None:
     """Embedding/indexing failure → honest non-indexed status, never false success."""
     from app.ingestion import indexer as indexer_mod
     from app.ingestion.pipeline import ingest_upload
-    from app.library import embedder as embedder_mod
+    from app.infrastructure.embeddings import client as embedder_mod
 
     class _FailEmbedder:
         async def embed(self, texts: list[str]) -> list[list[float]]:
@@ -695,7 +695,7 @@ async def test_failed_index_keeps_original_on_disk(monkeypatch, tmp_path) -> Non
     """Embed/index failure reports pending state and preserves the stored original."""
     import app.ingestion.pipeline as pipeline_mod
     from app.ingestion.pipeline import ingest_upload
-    from app.library import embedder as embedder_mod
+    from app.infrastructure.embeddings import client as embedder_mod
 
     class _FailEmbedder:
         async def embed(self, texts: list[str]) -> list[list[float]]:
@@ -786,7 +786,7 @@ async def test_embedding_count_mismatch_reports_pending(monkeypatch, tmp_path) -
     """Fewer vectors than sections → truthful pending state, original preserved."""
     import app.ingestion.pipeline as pipeline_mod
     from app.ingestion.pipeline import ingest_upload
-    from app.library import embedder as embedder_mod
+    from app.infrastructure.embeddings import client as embedder_mod
 
     class _ShortEmbedder:
         async def embed(self, texts: list[str]) -> list[list[float]]:
