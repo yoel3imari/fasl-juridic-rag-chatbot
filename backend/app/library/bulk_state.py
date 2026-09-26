@@ -29,10 +29,10 @@ from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.library_import import LibraryImportFile
+from app.repositories.library_import import LibraryImportRepository
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_MANIFEST = BACKEND_DIR / "data" / "library-manifest.json"
@@ -240,13 +240,10 @@ async def bump_indexed_count(
 
     Never read-modify-write this counter: a single statement keeps the
     increment atomic under SQLite's writer serialization, so two concurrent
-    writers cannot lose an update.
+    writers cannot lose an update. The statement itself lives in
+    ``app.repositories.library_import``.
     """
-    await session.execute(
-        update(LibraryImportFile)
-        .where(LibraryImportFile.id == file_id)
-        .values(indexed_count=LibraryImportFile.indexed_count + delta)
-    )
+    await LibraryImportRepository(session).bump_indexed_count(file_id, delta)
 
 
 @contextlib.contextmanager

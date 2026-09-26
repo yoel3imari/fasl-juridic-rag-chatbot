@@ -44,7 +44,7 @@ from app.library.extract_worker import ExtractJob, ExtractResult, run_job
 
 import app.models  # noqa: F401  (register ledger metadata)
 from app.models.base import Base
-from app.models.library_import import LibraryImportFile
+from app.repositories.library_import import LibraryImportRepository
 
 
 # Quarantine reasons that encode a retriable WORKER policy (not content
@@ -165,17 +165,8 @@ async def run_extract(
         maker = async_sessionmaker(engine, expire_on_commit=False)
         with single_writer():
             async with maker() as session:
-                rows = (
-                    (
-                        await session.execute(
-                            sa.select(LibraryImportFile).order_by(
-                                LibraryImportFile.path
-                            )
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
+                repo = LibraryImportRepository(session)
+                rows = await repo.list_files()
                 jobs, skipped_ineligible, skipped_done = _collect_jobs(
                     rows,
                     src,
@@ -207,7 +198,7 @@ async def run_extract(
                 from app.library.bulk_state import set_file_stage_status
 
                 for (file_id, _), res in zip(jobs, results):
-                    row = await session.get(LibraryImportFile, file_id)
+                    row = await repo.get_file(file_id)
                     if row is None:  # pragma: no cover - defensive
                         continue
                     if res.status == "extracted":

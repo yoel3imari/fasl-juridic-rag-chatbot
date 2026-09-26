@@ -32,7 +32,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.config import settings
@@ -43,6 +42,7 @@ from app.library.catalog import parse_filename
 import app.models  # noqa: F401  (register ledger metadata)
 from app.models.base import Base
 from app.models.library_import import LibraryImportFile
+from app.repositories.library_import import LibraryImportRepository
 
 _HASH_CHUNK = 1024 * 1024
 
@@ -169,12 +169,9 @@ async def _upsert_rows(
             )
         )
     # Winners first (sorted), then duplicates (sorted) - deterministic order.
+    repo = LibraryImportRepository(session)
     for item, is_winner in planned:
-        row = (
-            await session.execute(
-                sa.select(LibraryImportFile).where(LibraryImportFile.path == item.rel)
-            )
-        ).scalar_one_or_none()
+        row = await repo.find_file_by_path(item.rel)
         if is_winner:
             parsed = parse_filename(Path(item.rel).name, _folder_of(item.rel))
             if item.error is not None:

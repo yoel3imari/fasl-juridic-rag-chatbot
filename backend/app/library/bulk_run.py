@@ -55,7 +55,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import app.models  # noqa: F401  (register ledger metadata)
@@ -74,7 +73,7 @@ from app.library.bulk_extract import (
 )
 from app.library.bulk_state import set_chunk_status, set_file_stage_status
 from app.models.base import Base
-from app.models.library_import import LibraryImportChunk, LibraryImportFile
+from app.repositories.library_import import LibraryImportRepository
 
 FAIL_EXIT = 2
 
@@ -246,20 +245,7 @@ def write_embed_cache(path: str | Path, vectors: dict[str, list[float]]) -> Path
 
 async def _latest_sentinel(session: Any, kind: str) -> dict | None:
     """Newest ``library_import_runs`` row for ``kind`` as a plain dict."""
-    from app.models.library_import import LibraryImportRun
-
-    row = (
-        (
-            await session.execute(
-                sa.select(LibraryImportRun)
-                .where(LibraryImportRun.kind == kind)
-                .order_by(LibraryImportRun.id.desc())
-                .limit(1)
-            )
-        )
-        .scalars()
-        .first()
-    )
+    row = await LibraryImportRepository(session).latest_run(kind)
     if row is None:
         return None
     return {
@@ -293,15 +279,7 @@ async def scope_file_ids(session: Any, limit: int | None) -> list[int]:
     """
     if limit is not None and limit < 0:
         raise RunFailed(f"limit must be >= 0, got {limit}")
-    rows = (
-        (
-            await session.execute(
-                sa.select(LibraryImportFile).order_by(LibraryImportFile.path)
-            )
-        )
-        .scalars()
-        .all()
-    )
+    rows = await LibraryImportRepository(session).list_files()
     ids = [int(r.id) for r in rows]
     return ids if limit is None else ids[:limit]
 
@@ -336,8 +314,9 @@ async def ensure_extract(
         "ocr_pages": 0,
     }
     wanted = set(scope_ids)
+    repo = LibraryImportRepository(session)
     for file_id in scope_ids:
-        row = await session.get(LibraryImportFile, file_id)
+        row = await repo.get_file(file_id)
         if row is None or int(row.id) not in wanted:
             continue
         eligible, _ = is_extract_eligible(row.parse_status, row.quarantine_reason)
@@ -421,8 +400,9 @@ async def ensure_embed(
     chars_done = 0
     chars_total = 0
     wanted = set(scope_ids)
+    repo = LibraryImportRepository(session)
     for file_id in scope_ids:
-        row = await session.get(LibraryImportFile, file_id)
+        row = await repo.get_file(file_id)
         if row is None or int(row.id) not in wanted:
             continue
         if row.extract_status != "extracted":
@@ -438,26 +418,10 @@ async def ensure_embed(
                 artifact_path_for(adir, row.sha256), row.artifact_sha256
             )
         )
-        existing = {
-            c.chunk_id: c
-            for c in (
-                await session.execute(
-                    sa.select(LibraryImportChunk).where(
-                        LibraryImportChunk.file_id == row.id
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        }
+        existing = {c.chunk_id: c for c in await repo.list_chunks(row.id)}
         for ord_, rec in enumerate(records):
             if rec["chunk_id"] not in existing:
-                fresh = LibraryImportChunk(
-                    chunk_id=rec["chunk_id"],
-                    file_id=row.id,
-                    ord=ord_,
-                    status="pending",
-                )
+                fresh = repo.new_pending_chunk(rec["chunk_id"], row.id, ord_)
                 session.add(fresh)
                 existing[rec["chunk_id"]] = fresh
         await session.flush()
@@ -566,8 +530,9 @@ async def ensure_index(
         "count_after": 0,
     }
     wanted = set(scope_ids)
+    repo = LibraryImportRepository(session)
     for file_id in scope_ids:
-        row = await session.get(LibraryImportFile, file_id)
+        row = await repo.get_file(file_id)
         if row is None or int(row.id) not in wanted:
             continue
         if row.embed_status != "embedded":
@@ -576,17 +541,7 @@ async def ensure_index(
             continue  # resume: never re-index finished work
         if row.index_status not in ("pending", "failed"):
             continue
-        chunks = list(
-            (
-                await session.execute(
-                    sa.select(LibraryImportChunk)
-                    .where(LibraryImportChunk.file_id == row.id)
-                    .order_by(LibraryImportChunk.ord)
-                )
-            )
-            .scalars()
-            .all()
-        )
+        chunks = await repo.list_chunks_ordered(row.id)
         todo = [c for c in chunks if c.status == "embedded"]
         if not todo:
             if chunks and all(c.status in ("indexed", "failed") for c in chunks):
