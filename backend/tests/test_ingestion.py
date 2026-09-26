@@ -398,7 +398,7 @@ async def test_long_section_parent_child_completeness() -> None:
 
 async def test_cross_matter_isolation(monkeypatch) -> None:
     """Sections indexed for matter A are never visible from matter B."""
-    from app.ingestion import indexer as indexer_mod
+    from app.infrastructure.qdrant import indexer as indexer_mod
     from app.ingestion.pipeline import ingest_upload
     from app.infrastructure.embeddings import client as embedder_mod
     from app.repositories.matter import MatterRepository
@@ -492,7 +492,7 @@ async def test_faithful_and_normalized_text_kept_separate() -> None:
 
 async def test_qdrant_payload_targets_matter_evidence_only(monkeypatch) -> None:
     """Indexing targets matter_evidence collection; authority collection never used."""
-    from app.ingestion import indexer as indexer_mod
+    from app.infrastructure.qdrant import indexer as indexer_mod
     from app.ingestion.pipeline import ingest_upload
     from app.infrastructure.embeddings import client as embedder_mod
 
@@ -549,7 +549,7 @@ async def test_qdrant_payload_targets_matter_evidence_only(monkeypatch) -> None:
 
 async def test_index_failure_never_reported_indexed(monkeypatch) -> None:
     """Embedding/indexing failure → honest non-indexed status, never false success."""
-    from app.ingestion import indexer as indexer_mod
+    from app.infrastructure.qdrant import indexer as indexer_mod
     from app.ingestion.pipeline import ingest_upload
     from app.infrastructure.embeddings import client as embedder_mod
 

@@ -25,8 +25,8 @@ from app.domain.ingestion.errors import (
 from app.domain.ingestion.schemas import IngestResult, SectionResult, UploadInput
 from app.domain.ingestion.sections import build_sections
 from app.infrastructure.ingestion.extract import extract_pages
-from app.ingestion import indexer as indexer_mod
-from app.ingestion.indexer import EvidencePoint
+from app.infrastructure.qdrant import indexer as indexer_mod
+from app.infrastructure.qdrant.indexer import EvidencePoint
 
 ALLOWED_SUFFIXES: Final[frozenset[str]] = frozenset({".pdf", ".docx", ".txt", ".md"})
 MAX_UPLOAD_BYTES: Final[int] = 20_000_000
