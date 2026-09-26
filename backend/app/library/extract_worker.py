@@ -64,7 +64,7 @@ def _ocr_png(png_bytes: bytes, page_no: int, timeout: int) -> str:
     """OCR one rendered page with Tesseract ``ara+fra`` + bounded timeout."""
     import shutil
 
-    from app.ingestion.errors import OcrUnavailableError
+    from app.domain.ingestion.errors import OcrUnavailableError
 
     if shutil.which("tesseract") is None:
         raise OcrUnavailableError(page_no=page_no)

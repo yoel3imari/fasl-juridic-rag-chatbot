@@ -15,15 +15,15 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ingestion import pipeline as pipeline_mod
-from app.ingestion.errors import (
+from app.domain.ingestion.errors import (
     CorruptFileError,
     MatterNotFoundError,
     OversizeError,
     StorageError,
     UnsupportedTypeError,
 )
-from app.ingestion.schemas import UploadInput
+from app.domain.ingestion.schemas import UploadInput
+from app.ingestion import pipeline as pipeline_mod
 from app.models.base import get_db
 
 router = APIRouter(prefix="/api/v1/matters", tags=["documents"])

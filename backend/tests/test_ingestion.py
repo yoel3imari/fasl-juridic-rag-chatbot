@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from httpx import ASGITransport, AsyncClient
-from app.ingestion.schemas import UploadInput
+from app.domain.ingestion.schemas import UploadInput
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -771,7 +771,7 @@ async def test_ocr_missing_language_data_is_reviewable(monkeypatch) -> None:
     import shutil
     import pytesseract
     from app.ingestion import ocr as ocr_mod
-    from app.ingestion.errors import OcrUnavailableError
+    from app.domain.ingestion.errors import OcrUnavailableError
 
     def _raise_missing(image, **kwargs):
         raise pytesseract.TesseractError(1, "Error opening data file ara.traineddata")

@@ -10,8 +10,8 @@ from __future__ import annotations
 from typing import Final
 
 from app.ingestion import ocr as ocr_mod
-from app.ingestion.errors import CorruptFileError, OcrUnavailableError
-from app.ingestion.schemas import PageText
+from app.domain.ingestion.errors import CorruptFileError, OcrUnavailableError
+from app.domain.ingestion.schemas import PageText
 
 TEXT_PAGE_HINT: Final[int] = 20
 

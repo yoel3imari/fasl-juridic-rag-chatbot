@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from typing import Final
 
-from app.ingestion.schemas import PageText, SectionResult
+from app.domain.ingestion.schemas import PageText, SectionResult
 
 MAX_SECTION_CHARS: Final[int] = 2000
 CHILD_CHARS: Final[int] = 1500

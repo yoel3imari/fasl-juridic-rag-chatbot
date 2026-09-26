@@ -15,18 +15,18 @@ from typing import Final
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ingestion import indexer as indexer_mod
-from app.ingestion.classifier import classify
-from app.ingestion.errors import (
+from app.domain.ingestion.classifier import classify
+from app.domain.ingestion.errors import (
     CorruptFileError,
     MatterNotFoundError,
     OversizeError,
     UnsupportedTypeError,
 )
-from app.ingestion.extract import extract_pages
+from app.domain.ingestion.schemas import IngestResult, SectionResult, UploadInput
+from app.domain.ingestion.sections import build_sections
+from app.infrastructure.ingestion.extract import extract_pages
+from app.ingestion import indexer as indexer_mod
 from app.ingestion.indexer import EvidencePoint
-from app.ingestion.schemas import IngestResult, SectionResult, UploadInput
-from app.ingestion.sections import build_sections
 
 ALLOWED_SUFFIXES: Final[frozenset[str]] = frozenset({".pdf", ".docx", ".txt", ".md"})
 MAX_UPLOAD_BYTES: Final[int] = 20_000_000
@@ -200,7 +200,7 @@ def _write_immutable(target: Path, content: bytes, *, attempt: int = 0) -> Path:
     First tries the canonical name with O_EXCL; on collision retries once with
     a content-hash nonce suffix. Returns the final path actually written.
     """
-    from app.ingestion.errors import StorageError
+    from app.domain.ingestion.errors import StorageError
 
     target.parent.mkdir(parents=True, exist_ok=True)
     if attempt > 0:

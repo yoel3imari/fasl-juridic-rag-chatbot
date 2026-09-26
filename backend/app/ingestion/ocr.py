@@ -53,7 +53,7 @@ async def ocr_page_image(image_bytes: bytes, *, page_no: int) -> OcrResult:
 
 def ocr_page_image_sync(image_bytes: bytes, *, page_no: int) -> OcrResult:
     """Run tesseract on PNG bytes; raise OcrUnavailableError when OCR cannot run."""
-    from app.ingestion.errors import OcrUnavailableError
+    from app.domain.ingestion.errors import OcrUnavailableError
 
     if shutil.which("tesseract") is None:
         raise OcrUnavailableError(page_no=page_no)
