@@ -19,10 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import llm as llm_mod
 from app import settings_store
 from app.config import Settings
+from app.domain.citations import build_citations
+from app.domain.prompts import PROVISIONAL_NOT_FOUND, assemble_prompt
 from app.llm import tools as react_tools
 from app.models.base import get_db
 from app.models.conversation import Conversation, Message
-from app.rag.assemble import PROVISIONAL_NOT_FOUND, assemble_prompt, build_citations
 from app.rag.rerank import mmr_select, rerank
 from app.search import service as svc
 

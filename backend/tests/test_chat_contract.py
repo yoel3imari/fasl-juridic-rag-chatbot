@@ -359,7 +359,7 @@ def test_empty_retrieval_done_payload_not_found_true(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`not_found` is True only on this path."""
-    from app.rag.assemble import PROVISIONAL_NOT_FOUND
+    from app.domain.prompts import PROVISIONAL_NOT_FOUND
 
     agent = _ScriptedAgent(script=[[_envelope()], ["ignored"]])
     _wire(monkeypatch, _FakeStore([], []), agent)
@@ -453,3 +453,157 @@ def test_citations_precede_every_token_on_happy_paths(
     types = _types(_events(resp))
     assert CITATIONS in types, label
     assert types.index(CITATIONS) < types.index(TOKEN), (label, types)
+
+
+# --------------------------------------------------------------------------- #
+# prompt-text contract (plan todo 9)
+# --------------------------------------------------------------------------- #
+# The plan requires the emitted prompt strings to stay byte-identical across
+# the move to app/domain/prompts.py. Nothing pinned that text, so a one-word
+# edit passed the suite silently. These tests are the machine check: any change
+# to a prompt literal now fails here.
+EXPECTED_GUARDRAILS = (
+    "Answer ONLY from the provided matter + authority context below. "
+    "Mark gaps explicitly where the context is silent. "
+    "If the answer is not found in the context, reply with the provisional "
+    '"I don\'t know" statement. '
+    "Never guarantee legal outcomes. "
+    "Never compute deadlines from dates."
+)
+
+EXPECTED_PROVISIONAL_NOT_FOUND = (
+    "I don't know — the provided matter and authority context contains "
+    "no relevant passage for this question. This is provisional, not legal "
+    "advice: outcomes are never guaranteed, and deadlines cannot be computed "
+    "from dates alone."
+)
+
+
+def test_guardrails_text_is_byte_pinned() -> None:
+    """The mandatory guardrail wording is a frozen contract."""
+    from app.domain.prompts import GUARDRAILS
+
+    assert GUARDRAILS == EXPECTED_GUARDRAILS
+
+
+def test_provisional_not_found_text_is_byte_pinned() -> None:
+    """The provisional no-answer text is frozen, em dash included."""
+    from app.domain.prompts import PROVISIONAL_NOT_FOUND
+
+    assert PROVISIONAL_NOT_FOUND == EXPECTED_PROVISIONAL_NOT_FOUND
+    assert "—" in PROVISIONAL_NOT_FOUND
+
+
+def _prompt_hits() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    return (
+        [
+            {
+                "document_id": 11,
+                "version_no": 1,
+                "page": 2,
+                "span": [3, 9],
+                "doc_type": "contract",
+                "faithful_ref": "syn-sec-1",
+                "text": "SYNTHETIC matter clause.",
+            }
+        ],
+        [
+            {
+                "source": "SYN-LAW",
+                "version": "v0-test",
+                "edition": "ar-general",
+                "pub_date": "2024-01-01",
+                "doc_date": "2024-01-01",
+                "language": "ar",
+                "article_or_section": "SYN-Art-1",
+                "text": "SYNTHETIC authority passage.",
+            }
+        ],
+    )
+
+
+def test_assemble_prompt_is_byte_pinned() -> None:
+    """The fully-populated prompt is frozen byte-for-byte."""
+    from app.domain.prompts import assemble_prompt
+
+    matter, authority = _prompt_hits()
+    expected = (
+        "You are a Moroccan legal research assistant. Structure every answer as:\n"
+        "FACT, then RULE, then APPLICATION, then CONCLUSION.\n\n"
+        f"Guardrails (mandatory): {EXPECTED_GUARDRAILS}\n\n"
+        "Question: conge annuel\n\n"
+        "[matter evidence]\n"
+        "[matter: doc 11 p.2 ¶[3, 9]] (contract, syn-sec-1)\n"
+        "SYNTHETIC matter clause.\n\n"
+        "[legal authorities]\n"
+        "[authority: SYN-LAW v0-test SYN-Art-1 (ar-general)]\n"
+        "SYNTHETIC authority passage.\n"
+    )
+    assert assemble_prompt("conge annuel", matter, authority) == expected
+
+
+@pytest.mark.parametrize(
+    ("label", "matter", "authority"),
+    [
+        ("matter only", "yes", "no"),
+        ("authority only", "no", "yes"),
+        ("neither", "no", "no"),
+    ],
+)
+def test_assemble_prompt_empty_block_marker_is_pinned(
+    label: str, matter: str, authority: str
+) -> None:
+    """A domain with no hits renders the literal `(none)` marker."""
+    from app.domain.prompts import assemble_prompt
+
+    m, a = _prompt_hits()
+    matter_hits = m if matter == "yes" else []
+    authority_hits = a if authority == "yes" else []
+    prompt = assemble_prompt("q", matter_hits, authority_hits)
+    assert prompt.count("(none)") == (matter == "no") + (authority == "no"), label
+    assert prompt.startswith(
+        "You are a Moroccan legal research assistant. Structure every answer as:\n"
+    )
+    assert "Question: q\n\n" in prompt
+
+
+def test_citation_key_sets_are_byte_pinned() -> None:
+    """The single-domain key sets are the machine-readable citation contract."""
+    from app.domain.citations import AUTHORITY_CITATION_KEYS, MATTER_CITATION_KEYS
+
+    assert MATTER_CITATION_KEYS == frozenset(
+        {
+            "domain",
+            "document_id",
+            "version_no",
+            "doc_type",
+            "page",
+            "span",
+            "faithful_ref",
+        }
+    )
+    assert AUTHORITY_CITATION_KEYS == frozenset(
+        {
+            "domain",
+            "source",
+            "version",
+            "edition",
+            "pub_date",
+            "doc_date",
+            "language",
+            "article_or_section",
+        }
+    )
+
+
+def test_citation_objects_are_single_domain() -> None:
+    """A citation never mixes matter and authority fields."""
+    from app.domain.citations import build_citations
+
+    matter, authority = _prompt_hits()
+    cites = build_citations(matter, authority)
+    assert [c["domain"] for c in cites] == ["matter", "authority"]
+    for cite in cites:
+        other = "authority" if cite["domain"] == "matter" else "matter"
+        assert not any(f"{other}_" in k or k == other for k in cite), cite
+    assert cites[0]["span"] == [3, 9]

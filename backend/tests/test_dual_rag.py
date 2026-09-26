@@ -248,9 +248,9 @@ def test_claims_carry_domain_labels(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, db_session_factory
 ) -> None:
     """Every citation is single-domain with a mandatory domain label."""
-    from app.rag import assemble as asm_mod
+    from app.domain import citations as cit_mod
 
-    assert asm_mod  # rag assembly module exists
+    assert cit_mod  # citation module exists
     store = _FakeStore()
     agent = _retrieval_agent()
     _wire(monkeypatch, store, _FakeEmbedder(), agent)
