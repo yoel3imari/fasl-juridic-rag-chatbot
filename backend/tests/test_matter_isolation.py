@@ -98,7 +98,7 @@ async def test_matter_b_never_sees_matter_a():
     SYNTHETIC fixtures only — no real legal text.
     """
     from app.search import service as svc
-    from app.search.store import QdrantStore
+    from app.infrastructure.qdrant.store import QdrantStore
 
     svc.clear_search_cache()
 

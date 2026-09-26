@@ -5,7 +5,7 @@ anyone couples the sparse dim to the dense embedding dim (gate winner vs.
 fallback model).
 """
 
-from app.search.sparse import SPARSE_DIM, sparse_indices_values, sparse_vector
+from app.infrastructure.qdrant.sparse import SPARSE_DIM, sparse_indices_values, sparse_vector
 
 
 def test_sparse_dim_stays_2048():

@@ -31,10 +31,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.api.v1 import chat as chat_mod
+from app.domain.search.schemas import AUTHORITY_COLLECTION, EVIDENCE_COLLECTION
 from app.main import app
 from app.models import Base, Matter
 from app.models.base import get_db
-from app.search.schemas import AUTHORITY_COLLECTION, EVIDENCE_COLLECTION
 
 MATTER_ID = 7
 

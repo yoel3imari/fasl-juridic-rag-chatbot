@@ -21,6 +21,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import app.models  # noqa: F401  (register ledger metadata)
+from app.infrastructure.qdrant.store import IndexBatchResult, IndexReconciliationError
 from app.library import bulk_run
 from app.library.artifacts import build_record, sha256_file, write_artifact
 from app.library.bulk_migrate import live_git_sha
@@ -40,7 +41,6 @@ from app.models.library_import import (
     LibraryImportFile,
     LibraryImportRun,
 )
-from app.search.store import IndexBatchResult, IndexReconciliationError
 
 MODEL = "granite-embedding-107m"
 DIM = 4  # tiny test dim (live is 384; dim flows through as a parameter)

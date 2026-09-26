@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from app.search.schemas import AUTHORITY_COLLECTION, EVIDENCE_COLLECTION
+from app.domain.search.schemas import AUTHORITY_COLLECTION, EVIDENCE_COLLECTION
 
 _CACHE: dict[tuple, dict] = {}
 

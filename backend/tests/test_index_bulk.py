@@ -13,7 +13,7 @@ from __future__ import annotations
 import pytest
 
 from app.config import settings
-from app.search.store import (
+from app.infrastructure.qdrant.store import (
     IndexBatchResult,
     IndexReconciliationError,
     QdrantStore,
@@ -58,7 +58,7 @@ class _DropLastBatch(QdrantStore):
         self.wait_flags: list[bool] = []
 
     def _upsert_batch(self, client, collection, structs, *, wait: bool) -> None:
-        from app.search.store import _point_id
+        from app.infrastructure.qdrant.store import _point_id
 
         self.wait_flags.append(wait)
         keep = [s for s in structs if str(s.id) != _point_id(self.drop_raw_id)]
@@ -78,8 +78,8 @@ def test_happy_batch_reconciles_count_and_spot_check(tmp_path):
 
     from qdrant_client.models import Filter, HasIdCondition
 
-    from app.search.schemas import AUTHORITY_COLLECTION
-    from app.search.store import _point_id
+    from app.domain.search.schemas import AUTHORITY_COLLECTION
+    from app.infrastructure.qdrant.store import _point_id
 
     client = store._client()
     try:
@@ -102,7 +102,7 @@ def test_happy_batch_reconciles_count_and_spot_check(tmp_path):
 
 
 def test_batches_use_wait_false_and_split_at_batch_points(tmp_path):
-    from app.search.store import _point_id
+    from app.infrastructure.qdrant.store import _point_id
 
     pts = [_point(i) for i in range(5)]
     store = _DropLastBatch(local_path=str(tmp_path / "qdrant"), drop_raw_id="__none__")

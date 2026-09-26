@@ -4,7 +4,7 @@ The authority collection is never referenced here: the module owns a single
 collection constant and every payload carries matter_id + document_id + page
 + span + faithful_ref so citations resolve original spans later.
 
-Point shape lives in app.search.schemas (single source of truth); this module
+Point shape lives in app.domain.search.schemas (single source of truth); this module
 re-exports the names the ingestion pipeline already uses.
 """
 
@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from app.search.schemas import EVIDENCE_COLLECTION, EvidencePoint
+from app.domain.search.schemas import EVIDENCE_COLLECTION, EvidencePoint
 
 __all__ = [
     "EVIDENCE_COLLECTION",
@@ -39,7 +39,7 @@ class QdrantEvidenceIndexer:
     collection: str = EVIDENCE_COLLECTION
 
     def __init__(self, url: str | None = None, local_path: str | None = None) -> None:
-        from app.search.store import QdrantStore
+        from app.infrastructure.qdrant.store import QdrantStore
 
         self._store = QdrantStore(url=url, local_path=local_path)
 

@@ -11,11 +11,11 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel
 
 from app.config import settings
+from app.infrastructure.qdrant.store import QdrantStore
 from app.library.embedder import CrispEmbedClient
 from app.library.extractor import extract_chunks
 from app.library.manifest import EditionType, ManifestEntry
 from app.library.seeder import build_provenance
-from app.search.store import QdrantStore
 
 router = APIRouter(prefix="/api/v1/library", tags=["library"])
 

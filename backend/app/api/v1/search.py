@@ -28,7 +28,7 @@ class SearchBody(BaseModel):
 
 def get_store() -> svc.Store:
     """Factory seam: Qdrant store from settings (URL or local path)."""
-    from app.search.store import QdrantStore
+    from app.infrastructure.qdrant.store import QdrantStore
 
     return QdrantStore()  # type: ignore[return-value]
 

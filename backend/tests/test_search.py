@@ -32,7 +32,7 @@ class _FakeEmbedder:
 
 
 def _make_store():
-    from app.search.store import QdrantStore
+    from app.infrastructure.qdrant.store import QdrantStore
 
     return QdrantStore(local_path=":memory:", dim=DIM)
 

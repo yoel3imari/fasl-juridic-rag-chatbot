@@ -82,7 +82,7 @@ def test_chunk_id_legacy_calls_still_work():
 
 
 def test_authority_payload_is_superset_of_old_keys():
-    from app.search.store import _authority_payload
+    from app.infrastructure.qdrant.store import _authority_payload
 
     p = {
         "source": "Code du Travail",
@@ -111,7 +111,7 @@ def test_authority_payload_is_superset_of_old_keys():
 
 
 def test_authority_payload_defaults_when_new_fields_absent():
-    from app.search.store import _authority_payload
+    from app.infrastructure.qdrant.store import _authority_payload
 
     p = {
         "source": "S",
@@ -128,7 +128,7 @@ def test_authority_payload_defaults_when_new_fields_absent():
 
 
 def test_point_id_uuid5_stable_and_distinct():
-    from app.search.store import _point_id
+    from app.infrastructure.qdrant.store import _point_id
 
     assert _point_id("a") == _point_id("a")
     assert _point_id("a") != _point_id("b")

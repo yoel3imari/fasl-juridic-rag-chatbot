@@ -4,7 +4,7 @@
 for every existing matter document section through the CURRENT model
 (``settings.EMBEDDING_MODEL``) and upserts with the SAME point ids the
 ingestion pipeline used (``f"{document_id}:{section_id}"``, UUID5-mapped
-inside :class:`app.search.store.QdrantStore`), then reconciles counts.
+inside :class:`app.infrastructure.qdrant.store.QdrantStore`), then reconciles counts.
 
 Matter-domain logic, point ids, payload shape, and collection filters are
 untouched -- only the dense vector dim changes. No rows in
@@ -55,7 +55,7 @@ def _read_client(url: str, local_path: str | None) -> tuple[Any, bool]:
     short-lived per call.
     """
     if local_path:
-        from app.search.store import _shared_local_client
+        from app.infrastructure.qdrant.store import _shared_local_client
 
         return _shared_local_client(local_path), False
     return _client_for(url), True
@@ -182,7 +182,7 @@ def _evidence_points(
     ``f"{document_id}:{section_id}"`` (UUID5 mapping lives in the store),
     identical payload keys. Only the dense vector content/dim is new.
     """
-    from app.search.schemas import EvidencePoint
+    from app.domain.search.schemas import EvidencePoint
 
     if len(vectors) != len(sections):
         raise ReembedFailed(
@@ -317,7 +317,7 @@ async def run_reembed(args: argparse.Namespace) -> dict[str, Any]:
         raise ReembedFailed(f"embedding failed: {exc}") from exc
 
     # --- Phase 2: upsert with SAME point ids, then reconcile -------------
-    from app.search.store import QdrantStore
+    from app.infrastructure.qdrant.store import QdrantStore
 
     store = QdrantStore(url=qdrant_url, local_path=local_path, dim=dim)
     per_document: dict[str, int] = {}

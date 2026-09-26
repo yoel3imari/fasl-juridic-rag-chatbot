@@ -22,8 +22,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.search import sparse as sparse_mod
-from app.search.schemas import AUTHORITY_COLLECTION, EVIDENCE_COLLECTION
+from app.domain.search.schemas import AUTHORITY_COLLECTION, EVIDENCE_COLLECTION
+from app.infrastructure.qdrant import sparse as sparse_mod
 
 DENSE_NAME: str = "dense"
 SPARSE_NAME: str = "lexical"

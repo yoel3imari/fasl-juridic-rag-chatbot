@@ -201,7 +201,7 @@ def _make_embedder(embed_url: str | None, model: str):
 
 def _make_store(qdrant_url: str | None, local_path: str | None, dim: int):
     """Seam: live Qdrant store (tests inject a fake factory)."""
-    from app.search.store import QdrantStore
+    from app.infrastructure.qdrant.store import QdrantStore
 
     return QdrantStore(url=qdrant_url, local_path=local_path, dim=dim)
 
@@ -555,7 +555,7 @@ async def ensure_index(
     On ``IndexReconciliationError`` ONLY ``verified_ids`` are marked
     indexed, the rest stay pending, and the run fails loudly (non-zero).
     """
-    from app.search.store import IndexReconciliationError
+    from app.infrastructure.qdrant.store import IndexReconciliationError
 
     adir = Path(artifact_dir)
     report: dict[str, Any] = {
