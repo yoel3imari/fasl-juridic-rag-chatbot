@@ -5,6 +5,9 @@ evidence (DocumentSection rows) + prior chat (user-role Message rows),
 persists the result in an Analysis row (kind, content_json), and returns it.
 Analysis content lives ONLY in Analysis rows — document rows are read-only
 here. Rule-based only: no provider call, no privacy implications.
+
+Query construction lives in `app.repositories.analysis`; this module
+sequences the calls, runs the pure rule, and owns the transaction.
 """
 
 from __future__ import annotations
@@ -13,16 +16,11 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.analysis.engine import build_analysis
-from app.models.analysis import Analysis
 from app.models.base import get_db
-from app.models.conversation import Conversation, Message
-from app.models.document import Document
-from app.models.document_section import DocumentSection
-from app.models.matter import Matter
+from app.repositories.analysis import AnalysisRepository
 
 router = APIRouter(prefix="/api/v1/matters", tags=["analysis"])
 
@@ -54,42 +52,12 @@ async def create_analysis(
 ) -> AnalysisOut:
     """Run the rule-based analysis over stored matter evidence and persist it."""
     try:
-        matter = await session.get(Matter, matter_id)
-        if matter is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="matter not found"
-            )
-        sections = (
-            (
-                await session.execute(
-                    select(DocumentSection)
-                    .where(DocumentSection.matter_id == matter_id)
-                    .order_by(DocumentSection.id)
-                )
-            )
-            .scalars()
-            .all()
-        )
-        doc_types = list(
-            (
-                await session.execute(
-                    select(Document.doc_type).where(Document.matter_id == matter_id)
-                )
-            ).scalars()
-        )
-        user_messages = list(
-            (
-                await session.execute(
-                    select(Message.content)
-                    .join(Conversation, Message.conversation_id == Conversation.id)
-                    .where(
-                        Conversation.matter_id == matter_id,
-                        Message.role == "user",
-                    )
-                    .order_by(Message.id)
-                )
-            ).scalars()
-        )
+        repo = AnalysisRepository(session)
+        if not await repo.matter_exists(matter_id):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="matter not found")
+        sections = await repo.list_sections(matter_id)
+        doc_types = await repo.list_doc_types(matter_id)
+        user_messages = await repo.list_user_message_contents(matter_id)
         section_dicts = [
             {
                 "document_id": s.document_id,
@@ -101,16 +69,8 @@ async def create_analysis(
             }
             for s in sections
         ]
-        content = build_analysis(
-            section_dicts, doc_types, [str(m) for m in user_messages]
-        )
-        row = Analysis(
-            matter_id=matter_id,
-            kind=(body.kind if body else ANALYSIS_KIND),
-            content_json=content,
-        )
-        session.add(row)
-        await session.flush()
+        content = build_analysis(section_dicts, doc_types, user_messages)
+        row = await repo.create(matter_id, body.kind if body else ANALYSIS_KIND, content)
         analysis_id = row.id
         await session.commit()
     except HTTPException:
@@ -121,6 +81,4 @@ async def create_analysis(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"analysis failed: {exc}",
         ) from exc
-    return AnalysisOut(
-        matter_id=matter_id, analysis_id=analysis_id, kind=row.kind, content=content
-    )
+    return AnalysisOut(matter_id=matter_id, analysis_id=analysis_id, kind=row.kind, content=content)
