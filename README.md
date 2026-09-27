@@ -83,7 +83,7 @@ App URLs:
 
 ## Configuration
 
-Env vars (see `.env.example`, `.env`, `backend/app/config.py`):
+Env vars (see `.env.example`, `.env`, `backend/app/config/`):
 
 | Var | Default | Notes |
 |---|---|---|

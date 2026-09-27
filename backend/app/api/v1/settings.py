@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.config import Settings
+from app.config.resolver import resolve_llm_settings, resolve_privacy_mode
 from app.infrastructure.llm.agent import KNOWN_PROVIDERS
 from app.repositories import settings as settings_store
 
@@ -32,10 +33,8 @@ class LlmSettingsUpdate(BaseModel):
 
 def _resolve_current() -> tuple[str, str, str]:
     env = Settings()  # type: ignore[call-arg]
-    stored = settings_store.load_llm_settings()
-    provider = stored.get("provider") or env.LLM_PROVIDER
-    model = stored.get("model") or env.LLM_MODEL
-    return str(provider), str(model), str(env.MATTER_PRIVACY_MODE)
+    resolved = resolve_llm_settings(env)
+    return resolved.provider, resolved.model, resolve_privacy_mode(env)
 
 
 def _build_response() -> LlmSettingsResponse:

@@ -34,6 +34,11 @@ from app.api.v1.draft_schemas import (
     TransitionIn,
 )
 from app.config import Settings
+from app.config.resolver import (
+    ResolvedLlmSettings,
+    resolve_privacy_mode,
+    resolve_request_llm_settings,
+)
 from app.domain import drafts as drafts_mod
 from app.models.base import get_db
 from app.models.draft import Draft, ReviewState
@@ -67,11 +72,11 @@ def _to_out(
     )
 
 
-async def _polish_text(text: str, settings: Settings) -> tuple[str, bool]:
+async def _polish_text(text: str, resolved: ResolvedLlmSettings) -> tuple[str, bool]:
     """Best-effort LLM polish; any provider failure keeps the template."""
     try:
         agent = llm_mod.get_agent(
-            provider=settings.LLM_PROVIDER, model=settings.LLM_MODEL
+            provider=resolved.provider, model=resolved.model
         )
         result = await agent.run(
             "Polish the provisional draft below for clarity without adding, "
@@ -97,6 +102,7 @@ async def create_draft(
 ) -> DraftOut:
     """Assemble a grounded draft from the matter's latest analysis."""
     settings = Settings()  # type: ignore[call-arg]
+    resolved = resolve_request_llm_settings(settings)
     try:
         if body.draft_type not in drafts_mod.DRAFT_TYPES:
             raise HTTPException(
@@ -129,8 +135,8 @@ async def create_draft(
             try:
                 llm_mod.check_privacy(
                     text,
-                    provider=settings.LLM_PROVIDER,
-                    privacy_mode=settings.MATTER_PRIVACY_MODE,
+                    provider=resolved.provider,
+                    privacy_mode=resolve_privacy_mode(settings),
                     consent=body.consent,
                     has_matter_evidence=bool(
                         [c for c in citations if c.get("domain") == "matter"]
@@ -144,7 +150,7 @@ async def create_draft(
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)
                 ) from exc
-            text, polished = await _polish_text(text, settings)
+            text, polished = await _polish_text(text, resolved)
         row = await repo.create(matter_id, body.draft_type, text)
         await session.commit()
     except HTTPException:

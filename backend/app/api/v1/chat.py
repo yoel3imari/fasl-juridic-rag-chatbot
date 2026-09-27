@@ -18,6 +18,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import llm as llm_mod
 from app.config import Settings
+from app.config.resolver import (
+    resolve_llm_settings,
+    resolve_privacy_mode,
+    resolve_request_llm_settings,
+)
 from app.domain.citations import build_citations
 from app.domain.prompts import PROVISIONAL_NOT_FOUND, assemble_prompt
 from app.domain.rerank import mmr_select
@@ -101,9 +106,7 @@ class ModelsResponse(BaseModel):
 @router.get("/providers", response_model=ModelsResponse)
 async def list_models() -> ModelsResponse:
     settings = Settings()  # type: ignore[call-arg]
-    stored = settings_store.load_llm_settings()
-    current_provider = stored.get("provider") or settings.LLM_PROVIDER
-    current_model = stored.get("model") or settings.LLM_MODEL
+    resolved = resolve_llm_settings(settings)
     providers: list[ProviderOption] = [
         ProviderOption(
             id="ollama",
@@ -270,9 +273,9 @@ async def list_models() -> ModelsResponse:
         ),
     ]
     return ModelsResponse(
-        current_provider=str(current_provider),
-        current_model=str(current_model),
-        privacy_mode=settings.MATTER_PRIVACY_MODE,
+        current_provider=resolved.provider,
+        current_model=resolved.model,
+        privacy_mode=resolve_privacy_mode(settings),
         providers=providers,
     )
 
@@ -330,8 +333,11 @@ async def chat_rag(
     free-answer after attempted retrieval is never used.
     """
     settings = Settings()  # type: ignore[call-arg]
-    selected_provider = (body.provider or settings.LLM_PROVIDER).strip().lower()
-    selected_model = (body.model or settings.LLM_MODEL).strip()
+    resolved = resolve_request_llm_settings(
+        settings, provider=body.provider, model=body.model
+    )
+    selected_provider = resolved.provider.strip().lower()
+    selected_model = resolved.model.strip()
 
     if body.conversation_id is not None:
         conv = await session.get(Conversation, body.conversation_id)
@@ -397,7 +403,7 @@ async def chat_rag(
         _privacy_http(
             decision_prompt,
             provider=selected_provider,
-            privacy_mode=settings.MATTER_PRIVACY_MODE,
+            privacy_mode=resolve_privacy_mode(settings),
             consent=body.consent,
             has_matter_evidence=bool(matter_raw),
         )
@@ -502,7 +508,7 @@ async def chat_rag(
     _privacy_http(
         prompt,
         provider=selected_provider,
-        privacy_mode=settings.MATTER_PRIVACY_MODE,
+        privacy_mode=resolve_privacy_mode(settings),
         consent=body.consent,
         has_matter_evidence=bool(matter_top),
     )
@@ -615,6 +621,7 @@ async def chat_stream(ws: WebSocket) -> None:
     await ws.accept()
     # Fresh read per connection so env overrides apply in tests and deploys.
     settings = Settings()  # type: ignore[call-arg]
+    resolved = resolve_request_llm_settings(settings)
     while True:
         try:
             raw = await ws.receive_text()
@@ -630,8 +637,8 @@ async def chat_stream(ws: WebSocket) -> None:
         try:
             llm_mod.check_privacy(
                 payload.content,
-                provider=settings.LLM_PROVIDER,
-                privacy_mode=settings.MATTER_PRIVACY_MODE,
+                provider=resolved.provider,
+                privacy_mode=resolve_privacy_mode(settings),
                 consent=payload.consent,
                 system=payload.system,
             )
@@ -643,7 +650,7 @@ async def chat_stream(ws: WebSocket) -> None:
             continue
         try:
             agent = llm_mod.get_agent(
-                provider=settings.LLM_PROVIDER, model=settings.LLM_MODEL
+                provider=resolved.provider, model=resolved.model
             )
             async with agent.run_stream(payload.content) as result:
                 async for chunk in result.stream_text(delta=True):
@@ -657,7 +664,7 @@ async def chat_stream(ws: WebSocket) -> None:
                 "provider_unreachable",
                 str(
                     llm_mod.ProviderUnreachableError(
-                        provider=settings.LLM_PROVIDER, reason=str(exc)
+                        provider=resolved.provider, reason=str(exc)
                     )
                 ),
             )
