@@ -15,8 +15,8 @@ from app.infrastructure.embeddings.client import CrispEmbedClient
 from app.infrastructure.qdrant.store import QdrantStore
 from app.library.extractor import extract_chunks
 from app.library.manifest import EditionType, ManifestEntry
-from app.library.seeder import build_provenance
 from app.repositories.library_import import read_ledger_summary, zero_ledger_summary
+from app.services.library_seed import build_provenance
 
 router = APIRouter(prefix="/api/v1/library", tags=["library"])
 

@@ -64,7 +64,7 @@ def test_extractor_splits_arabic_article_structure():
 def test_provenance_records_all_required_fields():
     """build_provenance captures source/version/edition/language/coverage."""
     from app.library.extractor import Chunk
-    from app.library.seeder import build_provenance
+    from app.services.library_seed import build_provenance
 
     entry = ManifestEntry(
         source="Code du Travail",
@@ -97,7 +97,7 @@ def test_seeder_extract_and_provenance_works(tmp_path):
     """
     import json
 
-    from app.library.seeder import SEED_STATE, seed
+    from app.services.library_seed import SEED_STATE, seed
 
     text = "".join(
         f"المادة {i} - عنوان تجريبي\nنص تجريبي للمادة رقم {i} لغرض الاختبار.\n\n"
@@ -142,7 +142,7 @@ def test_seeder_extract_and_provenance_works(tmp_path):
 
 def test_seed_state_idempotent():
     """Re-seeding the same manifest does not duplicate state."""
-    from app.library.seeder import DEFAULT_MANIFEST, seed
+    from app.services.library_seed import DEFAULT_MANIFEST, seed
 
     r1 = seed(DEFAULT_MANIFEST, embed=False)
     r2 = seed(DEFAULT_MANIFEST, embed=False)

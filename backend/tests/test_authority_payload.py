@@ -41,7 +41,7 @@ def _base_kwargs(**over):
 
 
 def test_chunk_id_deterministic_on_identical_input():
-    from app.library.seeder import chunk_id
+    from app.services.library_seed import chunk_id
 
     a = chunk_id(**_base_kwargs(page=3, ordinal=0))
     b = chunk_id(**_base_kwargs(page=3, ordinal=0))
@@ -51,7 +51,7 @@ def test_chunk_id_deterministic_on_identical_input():
 
 
 def test_chunk_id_differs_across_pages_for_identical_text():
-    from app.library.seeder import chunk_id
+    from app.services.library_seed import chunk_id
 
     a = chunk_id(**_base_kwargs(page=3, ordinal=0))
     b = chunk_id(**_base_kwargs(page=4, ordinal=0))
@@ -59,7 +59,7 @@ def test_chunk_id_differs_across_pages_for_identical_text():
 
 
 def test_chunk_id_differs_across_ordinals_same_page():
-    from app.library.seeder import chunk_id
+    from app.services.library_seed import chunk_id
 
     a = chunk_id(**_base_kwargs(page=3, ordinal=0))
     b = chunk_id(**_base_kwargs(page=3, ordinal=1))
@@ -67,7 +67,7 @@ def test_chunk_id_differs_across_ordinals_same_page():
 
 
 def test_chunk_id_missing_page_does_not_crash_and_is_deterministic():
-    from app.library.seeder import chunk_id
+    from app.services.library_seed import chunk_id
 
     a = chunk_id(**_base_kwargs(page=None, ordinal=None))
     b = chunk_id(**_base_kwargs())
@@ -75,7 +75,7 @@ def test_chunk_id_missing_page_does_not_crash_and_is_deterministic():
 
 
 def test_chunk_id_legacy_calls_still_work():
-    from app.library.seeder import chunk_id
+    from app.services.library_seed import chunk_id
 
     legacy = chunk_id("Code du Travail", "2023", "ar-general", "Article 1", "نص")
     assert legacy.startswith("Code du Travail:2023:ar-general:Article 1:")
@@ -137,7 +137,7 @@ def test_point_id_uuid5_stable_and_distinct():
 def test_build_provenance_carries_new_keys():
     from app.library.extractor import Chunk
     from app.library.manifest import EditionType, ManifestEntry
-    from app.library.seeder import build_provenance
+    from app.services.library_seed import build_provenance
 
     entry = ManifestEntry(
         source="Code du Travail",

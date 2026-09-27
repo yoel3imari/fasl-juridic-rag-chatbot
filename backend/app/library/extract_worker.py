@@ -21,7 +21,7 @@ from typing import Any
 
 from app.library.artifacts import build_record
 from app.library.extractor import Chunk
-from app.library.seeder import chunk_id as make_chunk_id
+from app.services.library_seed import chunk_id as make_chunk_id
 
 _OCR_LANGS = "ara+fra"
 
