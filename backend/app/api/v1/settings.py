@@ -5,9 +5,9 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from app import settings_store
 from app.config import Settings
 from app.infrastructure.llm.agent import KNOWN_PROVIDERS
+from app.repositories import settings as settings_store
 
 router = APIRouter(prefix="/api/v1/settings", tags=["settings"])
 

@@ -17,7 +17,6 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import llm as llm_mod
-from app import settings_store
 from app.config import Settings
 from app.domain.citations import build_citations
 from app.domain.prompts import PROVISIONAL_NOT_FOUND, assemble_prompt
@@ -26,6 +25,7 @@ from app.infrastructure.rerank.flashrank import rerank
 from app.llm import tools as react_tools
 from app.models.base import get_db
 from app.models.conversation import Conversation, Message
+from app.repositories import settings as settings_store
 from app.search import service as svc
 
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])

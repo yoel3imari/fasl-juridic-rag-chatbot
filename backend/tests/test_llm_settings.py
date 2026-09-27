@@ -10,8 +10,8 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app import settings_store
 from app.main import app
+from app.repositories import settings as settings_store
 
 
 @pytest.fixture()

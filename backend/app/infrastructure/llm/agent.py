@@ -28,7 +28,7 @@ def _inject_stored_api_keys() -> None:
     agent construction never breaks.
     """
     try:
-        from app import settings_store
+        from app.repositories import settings as settings_store
     except Exception:
         return
     try:
