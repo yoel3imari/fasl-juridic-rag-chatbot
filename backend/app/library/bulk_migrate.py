@@ -259,21 +259,15 @@ def backup_sqlite(src: str, dest_dir: str) -> dict:
         raise MigrationRefused(f"live DB is empty: {src!r}")
     # Assert this is the ledger DB, not a stray file: it must carry the
     # alembic + library tables the API migrates.
-    import sqlite3
+    from app.repositories.library_import import (
+        LEDGER_REQUIRED_TABLES,
+        probe_ledger_tables,
+    )
 
     ledger_ok = False
     try:
-        conn = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
-        try:
-            tables = {
-                r[0]
-                for r in conn.execute(
-                    "select name from sqlite_master where type='table'"
-                )
-            }
-            ledger_ok = {"alembic_version", "library_import_runs"}.issubset(tables)
-        finally:
-            conn.close()
+        tables = probe_ledger_tables(src)
+        ledger_ok = LEDGER_REQUIRED_TABLES.issubset(tables)
     except Exception as exc:
         raise MigrationRefused(f"cannot probe live DB {src!r}: {exc}")
     if not ledger_ok:
@@ -627,29 +621,20 @@ def startup_dim_check() -> dict:
         ]
         sentinel: dict[str, Any] = {"checked": False, "reason": "sentinel-unread"}
         try:
-            import sqlite3
+            from app.repositories.library_import import read_migrate_sentinel
 
             src = resolve_sqlite_path(settings.DATABASE_URL)
-            conn = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
-            try:
-                rows = list(
-                    conn.execute(
-                        "select kind, model, dim, git_sha, status "
-                        "from library_import_runs order by id desc limit 1"
-                    )
-                )
-                if rows:
-                    k, m, d, g, s = rows[0]
-                    sentinel = {
-                        "checked": True,
-                        "kind": k,
-                        "model": m,
-                        "dim": d,
-                        "git_sha": g,
-                        "status": s,
-                    }
-            finally:
-                conn.close()
+            rows = read_migrate_sentinel(src)
+            if rows:
+                k, m, d, g, s = rows[0]
+                sentinel = {
+                    "checked": True,
+                    "kind": k,
+                    "model": m,
+                    "dim": d,
+                    "git_sha": g,
+                    "status": s,
+                }
         except Exception as exc:
             sentinel = {"checked": False, "reason": f"sentinel-unread: {exc}"}
         result = {

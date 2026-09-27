@@ -189,3 +189,45 @@ class LibraryImportRepository:
             .where(LibraryImportFile.id == file_id)
             .values(indexed_count=LibraryImportFile.indexed_count + delta)
         )
+
+
+# Tables that prove a file is the live ledger DB, not a stray SQLite file.
+LEDGER_REQUIRED_TABLES: frozenset[str] = frozenset({"alembic_version", "library_import_runs"})
+
+
+def probe_ledger_tables(src: str) -> set[str]:
+    """Return the table names of the SQLite file at `src` (read-only).
+
+    Owns the connection lifecycle: opens a read-only URI connection and always
+    closes it. Raises `OSError`/`sqlite3.Error` when the file is missing or
+    unreadable; the destructive-migration caller maps that to its own refusal
+    message, byte-identical to the pre-refactor text.
+    """
+    import sqlite3
+
+    conn = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
+    try:
+        return {r[0] for r in conn.execute("select name from sqlite_master where type='table'")}
+    finally:
+        conn.close()
+
+
+def read_migrate_sentinel(src: str) -> list[Any]:
+    """Return raw `(kind, model, dim, git_sha, status)` rows, newest first.
+
+    Owns the connection lifecycle like `probe_ledger_tables`. Raises on a
+    missing or unreadable file; the startup-dim caller degrades to its
+    `sentinel-unread` payload instead of raising.
+    """
+    import sqlite3
+
+    conn = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
+    try:
+        return list(
+            conn.execute(
+                "select kind, model, dim, git_sha, status "
+                "from library_import_runs order by id desc limit 1"
+            )
+        )
+    finally:
+        conn.close()
