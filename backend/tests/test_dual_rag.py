@@ -231,7 +231,7 @@ def _wire(
     svc_mod.clear_search_cache()
     monkeypatch.setattr(chat_mod, "get_store", lambda: store)
     monkeypatch.setattr(chat_mod, "get_embedder", lambda: embedder)
-    from app import llm as llm_mod
+    from app.infrastructure import llm as llm_mod
 
     monkeypatch.setattr(llm_mod, "get_agent", lambda **kwargs: agent)
 
@@ -550,7 +550,7 @@ def test_tool_loop_caps_at_three_rounds(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An LLM that always requests tools is capped at MAX_TOOL_ROUNDS."""
-    from app.llm import tools as tool_mod
+    from app.services import chat as tool_mod
 
     store = _FakeStore()
     embedder = _FakeEmbedder()
@@ -579,7 +579,7 @@ def test_tool_loop_caps_at_three_rounds(
 
 def test_parse_tool_call_envelope() -> None:
     """Unit: envelope parsing distinguishes tool calls from direct answers."""
-    from app.llm import tools as tool_mod
+    from app.services import chat as tool_mod
 
     assert tool_mod.parse_tool_call(_tool_envelope()) == {
         "tool": "search_both",
@@ -597,9 +597,9 @@ def test_parse_tool_call_envelope() -> None:
 
 def test_get_agent_with_tools_registers_tools() -> None:
     """get_agent_with_tools builds an agent carrying the retrieval tools."""
-    from app import llm as llm_mod
+    from app.services import chat as tool_mod
 
-    agent = llm_mod.get_agent_with_tools(
+    agent = tool_mod.get_agent_with_tools(
         provider="ollama",
         model="llama3.2",
         store=_FakeStore(),

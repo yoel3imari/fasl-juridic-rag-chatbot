@@ -26,8 +26,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from fastapi import HTTPException
-
+from app.infrastructure.llm import agent as agent_mod
 from app.services import search as svc
 
 MAX_TOOL_ROUNDS: int = 3
@@ -128,64 +127,37 @@ async def execute_tool_call(
     """Run one retrieval tool, returning raw (matter_hits, authority_hits).
 
     Matter isolation is preserved: matter_id is pre-filtered in the store,
-    never post-hoc. Error mapping matches the chat contract: embedding
-    failure → 503, store failure → 500.
+    never post-hoc. svc errors propagate unchanged; the HTTP mapping
+    (embedding failure -> 503, store failure -> 500) lives in the chat
+    route, not in this service.
     """
     if tool == SEARCH_MATTER:
-        try:
-            res = await svc.search_matter(
-                store=ctx.store,
-                embedder=ctx.embedder,
-                matter_id=ctx.matter_id,
-                query=query,
-                top_k=ctx.top_k,
-            )
-        except svc.EmbeddingUnavailableError as exc:
-            raise HTTPException(
-                status_code=503, detail=f"{exc} — retry shortly"
-            ) from exc
-        except svc.SearchUnavailableError as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        res = await svc.search_matter(
+            store=ctx.store,
+            embedder=ctx.embedder,
+            matter_id=ctx.matter_id,
+            query=query,
+            top_k=ctx.top_k,
+        )
         return list(res["matter"]), []
     if tool == SEARCH_AUTHORITY:
-        try:
-            res = await svc.search_authority(
-                store=ctx.store, embedder=ctx.embedder, query=query, top_k=ctx.top_k
-            )
-        except svc.EmbeddingUnavailableError as exc:
-            raise HTTPException(
-                status_code=503, detail=f"{exc} — retry shortly"
-            ) from exc
-        except svc.SearchUnavailableError as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        res = await svc.search_authority(
+            store=ctx.store, embedder=ctx.embedder, query=query, top_k=ctx.top_k
+        )
         return [], list(res["authority"])
     if tool == SEARCH_BOTH:
-        try:
-            matter_res = await svc.search_matter(
-                store=ctx.store,
-                embedder=ctx.embedder,
-                matter_id=ctx.matter_id,
-                query=query,
-                top_k=ctx.top_k,
-            )
-        except svc.EmbeddingUnavailableError as exc:
-            raise HTTPException(
-                status_code=503, detail=f"{exc} — retry shortly"
-            ) from exc
-        except svc.SearchUnavailableError as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
-        try:
-            auth_res = await svc.search_authority(
-                store=ctx.store, embedder=ctx.embedder, query=query, top_k=ctx.top_k
-            )
-        except svc.EmbeddingUnavailableError as exc:
-            raise HTTPException(
-                status_code=503, detail=f"{exc} — retry shortly"
-            ) from exc
-        except svc.SearchUnavailableError as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        matter_res = await svc.search_matter(
+            store=ctx.store,
+            embedder=ctx.embedder,
+            matter_id=ctx.matter_id,
+            query=query,
+            top_k=ctx.top_k,
+        )
+        auth_res = await svc.search_authority(
+            store=ctx.store, embedder=ctx.embedder, query=query, top_k=ctx.top_k
+        )
         return list(matter_res["matter"]), list(auth_res["authority"])
-    raise HTTPException(status_code=500, detail=f"unknown retrieval tool: {tool}")
+    raise ValueError(f"unknown retrieval tool: {tool}")
 
 
 def register_retrieval_tools(agent: Any, ctx: ToolContext) -> bool:
@@ -241,3 +213,26 @@ def register_retrieval_tools(agent: Any, ctx: ToolContext) -> bool:
         )
 
     return True
+
+def get_agent_with_tools(
+    provider: str | None = None,
+    model: str | None = None,
+    *,
+    store: Any,
+    embedder: Any,
+    matter_id: int,
+    top_k: int = 30,
+) -> Any:
+    """Build the chat agent with retrieval tools registered.
+
+    Wraps get_agent, then registers search_matter_tool /
+    search_authority_tool / search_both_tool (matter_id pre-filter bound)
+    via register_retrieval_tools. See the module docstring for why the
+    chat route still drives a manual envelope loop around these tools.
+    """
+    agent = agent_mod.get_agent(provider=provider, model=model)
+    register_retrieval_tools(
+        agent,
+        ToolContext(store=store, embedder=embedder, matter_id=matter_id, top_k=top_k),
+    )
+    return agent

@@ -16,7 +16,6 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import llm as llm_mod
 from app.config import Settings
 from app.config.resolver import (
     resolve_llm_settings,
@@ -24,13 +23,20 @@ from app.config.resolver import (
     resolve_request_llm_settings,
 )
 from app.domain.citations import build_citations
+from app.domain.privacy import (
+    ConsentRequiredError,
+    PrivacyViolationError,
+    check_privacy,
+)
 from app.domain.prompts import PROVISIONAL_NOT_FOUND, assemble_prompt
 from app.domain.rerank import mmr_select
+from app.infrastructure import llm as llm_mod
+from app.infrastructure.llm.errors import InvalidModelError, ProviderUnreachableError
 from app.infrastructure.rerank.flashrank import rerank
-from app.llm import tools as react_tools
 from app.models.base import get_db
 from app.models.conversation import Conversation, Message
 from app.repositories import settings as settings_store
+from app.services import chat as react_tools
 from app.services import search as svc
 
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
@@ -303,16 +309,16 @@ def _privacy_http(
 ) -> None:
     """Privacy guard mapped to the chat 403 contract."""
     try:
-        llm_mod.check_privacy(
+        check_privacy(
             prompt,
             provider=provider,
             privacy_mode=privacy_mode,
             consent=consent,
             has_matter_evidence=has_matter_evidence,
         )
-    except llm_mod.PrivacyViolationError as exc:
+    except PrivacyViolationError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except llm_mod.ConsentRequiredError as exc:
+    except ConsentRequiredError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
@@ -382,7 +388,7 @@ async def chat_rag(
     )
     try:
         agent = llm_mod.get_agent(provider=selected_provider, model=selected_model)
-    except llm_mod.InvalidModelError as exc:
+    except InvalidModelError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     # Remember last-used provider/model server-side (before streaming).
     try:
@@ -420,7 +426,7 @@ async def chat_rag(
             text = await _collect_text(agent, decision_prompt)
         except Exception as exc:  # provider down mid-loop: degrade, never crash
             provider_error = str(
-                llm_mod.ProviderUnreachableError(
+                ProviderUnreachableError(
                     provider=selected_provider, reason=str(exc)
                 )
             )
@@ -429,10 +435,18 @@ async def chat_rag(
         if call is None:
             direct_text = text
             break
-        # execute_tool_call maps embedding failure → 503, store failure → 500.
-        m_new, a_new = await react_tools.execute_tool_call(
-            tool_ctx, call["tool"], call["query"]
-        )
+        # execute_tool_call propagates svc errors; map them to the chat
+        # contract here: embedding failure → 503, store failure → 500.
+        try:
+            m_new, a_new = await react_tools.execute_tool_call(
+                tool_ctx, call["tool"], call["query"]
+            )
+        except svc.EmbeddingUnavailableError as exc:
+            raise HTTPException(
+                status_code=503, detail=f"{exc} — retry shortly"
+            ) from exc
+        except svc.SearchUnavailableError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
         tool_rounds += 1
         matter_raw.extend(m_new)
         auth_raw.extend(a_new)
@@ -590,7 +604,7 @@ async def chat_rag(
                     "type": "error",
                     "code": "provider_unreachable",
                     "detail": str(
-                        llm_mod.ProviderUnreachableError(
+                        ProviderUnreachableError(
                             provider=selected_provider, reason=str(exc)
                         )
                     ),
@@ -644,17 +658,17 @@ async def chat_stream(ws: WebSocket) -> None:
             )
             continue
         try:
-            llm_mod.check_privacy(
+            check_privacy(
                 payload.content,
                 provider=resolved.provider,
                 privacy_mode=resolve_privacy_mode(settings),
                 consent=payload.consent,
                 system=payload.system,
             )
-        except llm_mod.PrivacyViolationError as exc:
+        except PrivacyViolationError as exc:
             await _send_error(ws, "privacy_violation", str(exc))
             continue
-        except llm_mod.ConsentRequiredError as exc:
+        except ConsentRequiredError as exc:
             await _send_error(ws, "consent_required", str(exc))
             continue
         try:
@@ -672,7 +686,7 @@ async def chat_stream(ws: WebSocket) -> None:
                 ws,
                 "provider_unreachable",
                 str(
-                    llm_mod.ProviderUnreachableError(
+                    ProviderUnreachableError(
                         provider=resolved.provider, reason=str(exc)
                     )
                 ),

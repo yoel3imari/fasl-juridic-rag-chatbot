@@ -117,7 +117,6 @@ ban-relative-imports = "parents"
 "app/infrastructure/**" = ["TID251"]
 "app/ingestion/**" = ["TID251"]
 "app/library/**" = ["TID251"]
-"app/llm/**" = ["TID251"]
 "app/models/**" = ["TID251"]
 "app/repositories/**" = ["TID251"]
 "app/schemas/**" = ["TID251"]

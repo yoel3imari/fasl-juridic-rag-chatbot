@@ -1,6 +1,6 @@
 """Matter-privacy guard + provider-agnostic LLM layer (TDD spec for task 6).
 
-Red-first: this module imports app.llm, which does not exist yet.
+Red-first: this module imports app.domain.privacy, which did not exist yet.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ def test_strict_mode_blocks_external_with_matter_text(
 ) -> None:
     """Strict mode: matter evidence must never reach an external provider."""
     _strict_settings(monkeypatch, provider="openai")
-    from app import llm as llm_mod
+    from app.domain import privacy as llm_mod
 
     fake = _RecordingAgent()
     with pytest.raises(llm_mod.PrivacyViolationError) as exc_info:
@@ -60,7 +60,7 @@ def test_strict_mode_blocks_external_with_matter_text(
 def test_strict_mode_blocks_system_role_bypass(monkeypatch: pytest.MonkeyPatch) -> None:
     """Adversarial: matter text smuggled via the system role is also blocked."""
     _strict_settings(monkeypatch, provider="groq")
-    from app import llm as llm_mod
+    from app.domain import privacy as llm_mod
 
     with pytest.raises(llm_mod.PrivacyViolationError):
         llm_mod.check_privacy(
@@ -72,7 +72,7 @@ def test_strict_mode_blocks_system_role_bypass(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_local_provider_always_allowed() -> None:
-    from app import llm as llm_mod
+    from app.domain import privacy as llm_mod
 
     # Must not raise, even with matter evidence and no consent.
     llm_mod.check_privacy(MATTER_TEXT, provider="ollama", privacy_mode="strict")
@@ -81,7 +81,7 @@ def test_local_provider_always_allowed() -> None:
 def test_non_strict_requires_explicit_consent(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    from app import llm as llm_mod
+    from app.domain import privacy as llm_mod
 
     with pytest.raises(llm_mod.ConsentRequiredError):
         llm_mod.check_privacy(
@@ -95,7 +95,7 @@ def test_non_strict_requires_explicit_consent(
 
 
 def test_invalid_provider_model_raises_config_error() -> None:
-    from app import llm as llm_mod
+    from app.infrastructure import llm as llm_mod
 
     with pytest.raises(llm_mod.InvalidModelError):
         llm_mod.get_agent(provider="skynet", model="t-800")
@@ -106,7 +106,7 @@ def test_invalid_provider_model_raises_config_error() -> None:
 def test_get_agent_builds_model_string(monkeypatch: pytest.MonkeyPatch) -> None:
     _strict_settings(monkeypatch, provider="ollama")
     monkeypatch.setenv("LLM_MODEL", "llama3.2")
-    from app import llm as llm_mod
+    from app.infrastructure import llm as llm_mod
 
     agent = llm_mod.get_agent()
     assert "llama3.2" in agent.model_name or "ollama" in agent.model_name
@@ -142,7 +142,7 @@ def test_ws_strict_violation_structured_error_no_external_send(
 def test_ws_provider_unreachable_degrades_gracefully(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app import llm as llm_mod
+    from app.infrastructure import llm as llm_mod
 
     class _BoomAgent:
         model_name = "openai:gpt-4o-mini"

@@ -3,7 +3,7 @@
 Deterministic extraction over stored DocumentSection.normalized_text plus
 prior chat (user-role) messages. NO LLM and NO provider call on this path,
 so the matter-privacy guard is trivially satisfied; any future LLM
-enrichment MUST route through app.llm.check_privacy first (strict +
+enrichment MUST route through app.domain.privacy.check_privacy first (strict +
 external + matter evidence -> blocked).
 
 Heuristics are deliberately narrow and documented inline: person/company

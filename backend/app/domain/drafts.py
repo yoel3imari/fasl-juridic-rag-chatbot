@@ -4,7 +4,7 @@ Deterministic assembly over the latest Analysis content_json (issues,
 obligations, parties, dates, gaps with span refs) plus authority citations
 already stored in the matter (message citations_json). NO provider call on
 the template path, so it works with zero LLM providers; the optional polish
-path lives in the route and MUST pass app.llm.check_privacy first (strict +
+path lives in the route and MUST pass app.domain.privacy.check_privacy first (strict +
 external + matter evidence -> blocked BEFORE any provider call).
 
 Grounding rule: every claim in the generated text carries a span ref from

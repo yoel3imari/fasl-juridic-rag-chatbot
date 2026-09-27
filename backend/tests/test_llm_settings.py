@@ -262,7 +262,7 @@ def test_chat_remembers_last_used(
 
     monkeypatch.setattr(chat_mod, "get_store", lambda: _FakeStore())
     monkeypatch.setattr(chat_mod, "get_embedder", lambda: _FakeEmbedder())
-    from app import llm as llm_mod
+    from app.infrastructure import llm as llm_mod
 
     monkeypatch.setattr(llm_mod, "get_agent", lambda **kwargs: _FakeAgent())
 

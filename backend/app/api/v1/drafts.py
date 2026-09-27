@@ -14,7 +14,7 @@ plus authority citations already stored in the matter's message
 citations_json. Unknown draft_type → 400; matter without analysis → 422
 (nothing is fabricated); unknown to_state → 400; leaving lawyer_reviewed
 → 409. The template path makes zero provider calls; polish=True routes
-through app.llm.check_privacy BEFORE any provider call (strict + external
+through app.domain.privacy.check_privacy BEFORE any provider call (strict + external
 + matter evidence → 403).
 """
 
@@ -26,7 +26,6 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import llm as llm_mod
 from app.api.v1.draft_schemas import (
     DraftCreateIn,
     DraftOut,
@@ -40,6 +39,12 @@ from app.config.resolver import (
     resolve_request_llm_settings,
 )
 from app.domain import drafts as drafts_mod
+from app.domain.privacy import (
+    ConsentRequiredError,
+    PrivacyViolationError,
+    check_privacy,
+)
+from app.infrastructure import llm as llm_mod
 from app.models.base import get_db
 from app.models.draft import Draft, ReviewState
 from app.repositories.draft import DraftRepository
@@ -133,7 +138,7 @@ async def create_draft(
         polished = False
         if body.polish:
             try:
-                llm_mod.check_privacy(
+                check_privacy(
                     text,
                     provider=resolved.provider,
                     privacy_mode=resolve_privacy_mode(settings),
@@ -142,11 +147,11 @@ async def create_draft(
                         [c for c in citations if c.get("domain") == "matter"]
                     ),
                 )
-            except llm_mod.PrivacyViolationError as exc:
+            except PrivacyViolationError as exc:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)
                 ) from exc
-            except llm_mod.ConsentRequiredError as exc:
+            except ConsentRequiredError as exc:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)
                 ) from exc

@@ -217,7 +217,7 @@ def _wire(
     store: _FakeStore,
     agent: _ScriptedAgent,
 ) -> None:
-    from app import llm as llm_mod
+    from app.infrastructure import llm as llm_mod
     from app.services import search as svc_mod
 
     svc_mod.clear_search_cache()
