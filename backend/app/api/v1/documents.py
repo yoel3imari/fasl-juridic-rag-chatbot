@@ -23,8 +23,8 @@ from app.domain.ingestion.errors import (
     UnsupportedTypeError,
 )
 from app.domain.ingestion.schemas import UploadInput
-from app.ingestion import pipeline as pipeline_mod
 from app.models.base import get_db
+from app.services import ingestion as pipeline_mod
 
 router = APIRouter(prefix="/api/v1/matters", tags=["documents"])
 

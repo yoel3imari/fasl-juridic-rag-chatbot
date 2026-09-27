@@ -178,7 +178,7 @@ def _evidence_points(
 ) -> list[Any]:
     """Build points with the pipeline's EXACT id/payload shape (same ids).
 
-    Mirrors ``app.ingestion.pipeline._embed_and_index``: raw id
+    Mirrors ``app.services.ingestion._embed_and_index``: raw id
     ``f"{document_id}:{section_id}"`` (UUID5 mapping lives in the store),
     identical payload keys. Only the dense vector content/dim is new.
     """

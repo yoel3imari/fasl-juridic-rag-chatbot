@@ -27,7 +27,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 @pytest.fixture(autouse=True)
 def _isolated_storage(tmp_path, monkeypatch) -> None:
     """Route every pipeline file write into a per-test tmp dir."""
-    import app.ingestion.pipeline as pipeline_mod
+    import app.services.ingestion as pipeline_mod
 
     monkeypatch.setattr(pipeline_mod, "get_storage_dir", lambda: tmp_path / "store")
 
@@ -80,7 +80,7 @@ def _termination_pdf_bytes() -> bytes:
 
 async def test_termination_letter_sections_with_pages() -> None:
     """Upload Termination_Letter.pdf fixture → sections with title, page, faithful text."""
-    from app.ingestion.pipeline import ingest_upload
+    from app.services.ingestion import ingest_upload
 
     session, engine = await _make_session()
     try:
@@ -125,7 +125,7 @@ async def _client_with_overrides(session: AsyncSession):
 
 async def test_upload_txt_returns_sections_and_version(tmp_path) -> None:
     """Happy path: TXT upload persists original + DocumentVersion + sections."""
-    import app.ingestion.pipeline as pipeline_mod
+    import app.services.ingestion as pipeline_mod
 
     session, engine = await _make_session()
     try:
@@ -213,7 +213,7 @@ async def test_upload_unsupported_type_rejected() -> None:
 
 
 async def test_upload_oversize_rejected(monkeypatch) -> None:
-    import app.ingestion.pipeline as pipeline_mod
+    import app.services.ingestion as pipeline_mod
 
     session, engine = await _make_session()
     try:
@@ -253,7 +253,7 @@ async def test_upload_nonexistent_matter_404() -> None:
 
 
 async def test_upload_path_traversal_filename_sanitized(tmp_path) -> None:
-    import app.ingestion.pipeline as pipeline_mod
+    import app.services.ingestion as pipeline_mod
 
     session, engine = await _make_session()
     try:
@@ -286,7 +286,7 @@ async def test_upload_path_traversal_filename_sanitized(tmp_path) -> None:
 
 async def test_unknown_classification_is_reviewable() -> None:
     """Unknown doc_type lands in a reviewable state, never silently indexed as known."""
-    from app.ingestion.pipeline import ingest_upload
+    from app.services.ingestion import ingest_upload
 
     session, engine = await _make_session()
     try:
@@ -312,7 +312,7 @@ async def test_low_ocr_confidence_flagged_reviewable(monkeypatch) -> None:
     """Scanned page below OCR threshold → reviewable with its real confidence score."""
     from app.infrastructure.ocr import tesseract as ocr_mod
     from app.infrastructure.ocr.tesseract import OcrResult
-    from app.ingestion.pipeline import ingest_upload
+    from app.services.ingestion import ingest_upload
 
     def _fake_ocr(_: bytes, *, page_no: int) -> OcrResult:
         return OcrResult(
@@ -361,7 +361,7 @@ def _image_only_pdf_bytes() -> bytes:
 
 async def test_long_section_parent_child_completeness() -> None:
     """Long sections split into parent/child segments; concatenation loses nothing."""
-    from app.ingestion.pipeline import ingest_upload
+    from app.services.ingestion import ingest_upload
 
     session, engine = await _make_session()
     try:
@@ -399,7 +399,7 @@ async def test_long_section_parent_child_completeness() -> None:
 async def test_cross_matter_isolation(monkeypatch) -> None:
     """Sections indexed for matter A are never visible from matter B."""
     from app.infrastructure.qdrant import indexer as indexer_mod
-    from app.ingestion.pipeline import ingest_upload
+    from app.services.ingestion import ingest_upload
     from app.infrastructure.embeddings import client as embedder_mod
     from app.repositories.matter import MatterRepository
 
@@ -465,7 +465,7 @@ async def test_cross_matter_isolation(monkeypatch) -> None:
 
 async def test_faithful_and_normalized_text_kept_separate() -> None:
     """Faithful quotation text is stored apart from normalized search text."""
-    from app.ingestion.pipeline import ingest_upload
+    from app.services.ingestion import ingest_upload
 
     session, engine = await _make_session()
     try:
@@ -493,7 +493,7 @@ async def test_faithful_and_normalized_text_kept_separate() -> None:
 async def test_qdrant_payload_targets_matter_evidence_only(monkeypatch) -> None:
     """Indexing targets matter_evidence collection; authority collection never used."""
     from app.infrastructure.qdrant import indexer as indexer_mod
-    from app.ingestion.pipeline import ingest_upload
+    from app.services.ingestion import ingest_upload
     from app.infrastructure.embeddings import client as embedder_mod
 
     calls: list[tuple[str, list[dict]]] = []
@@ -550,7 +550,7 @@ async def test_qdrant_payload_targets_matter_evidence_only(monkeypatch) -> None:
 async def test_index_failure_never_reported_indexed(monkeypatch) -> None:
     """Embedding/indexing failure → honest non-indexed status, never false success."""
     from app.infrastructure.qdrant import indexer as indexer_mod
-    from app.ingestion.pipeline import ingest_upload
+    from app.services.ingestion import ingest_upload
     from app.infrastructure.embeddings import client as embedder_mod
 
     class _FailEmbedder:
@@ -588,7 +588,7 @@ async def test_index_failure_never_reported_indexed(monkeypatch) -> None:
 
 async def test_contract_article4_page_attribution() -> None:
     """Contract fixture yields Article 4 section on its correct page."""
-    from app.ingestion.pipeline import ingest_upload
+    from app.services.ingestion import ingest_upload
 
     session, engine = await _make_session()
     try:
@@ -636,7 +636,7 @@ def _contract_pdf_bytes() -> bytes:
 
 async def test_upload_oversize_returns_413_through_route(monkeypatch, tmp_path) -> None:
     """Oversize bodies get HTTP 413 from the real route with no orphan rows/files."""
-    import app.ingestion.pipeline as pipeline_mod
+    import app.services.ingestion as pipeline_mod
     from sqlalchemy import func, select
     from app.models import Document
 
@@ -666,7 +666,7 @@ async def test_upload_oversize_returns_413_through_route(monkeypatch, tmp_path) 
 
 async def test_write_immutable_never_overwrites(tmp_path) -> None:
     """A pre-existing original keeps its bytes; new content lands elsewhere."""
-    from app.ingestion.pipeline import _write_immutable
+    from app.services.ingestion import _write_immutable
 
     target = tmp_path / "matter_1" / "doc_9_v1_same.txt"
     target.parent.mkdir(parents=True)
@@ -679,7 +679,7 @@ async def test_write_immutable_never_overwrites(tmp_path) -> None:
 
 async def test_cleanup_removes_only_created_files(tmp_path) -> None:
     """Failure cleanup deletes files created by this upload, never pre-existing ones."""
-    from app.ingestion.pipeline import discard_created
+    from app.services.ingestion import discard_created
 
     preexisting = tmp_path / "matter_1" / "doc_9_v1_same.txt"
     preexisting.parent.mkdir(parents=True)
@@ -693,8 +693,8 @@ async def test_cleanup_removes_only_created_files(tmp_path) -> None:
 
 async def test_failed_index_keeps_original_on_disk(monkeypatch, tmp_path) -> None:
     """Embed/index failure reports pending state and preserves the stored original."""
-    import app.ingestion.pipeline as pipeline_mod
-    from app.ingestion.pipeline import ingest_upload
+    import app.services.ingestion as pipeline_mod
+    from app.services.ingestion import ingest_upload
     from app.infrastructure.embeddings import client as embedder_mod
 
     class _FailEmbedder:
@@ -784,8 +784,8 @@ async def test_ocr_missing_language_data_is_reviewable(monkeypatch) -> None:
 
 async def test_embedding_count_mismatch_reports_pending(monkeypatch, tmp_path) -> None:
     """Fewer vectors than sections → truthful pending state, original preserved."""
-    import app.ingestion.pipeline as pipeline_mod
-    from app.ingestion.pipeline import ingest_upload
+    import app.services.ingestion as pipeline_mod
+    from app.services.ingestion import ingest_upload
     from app.infrastructure.embeddings import client as embedder_mod
 
     class _ShortEmbedder:

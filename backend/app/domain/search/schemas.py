@@ -1,6 +1,6 @@
 """Shared Qdrant payload schemas — single source of truth for both collections.
 
-``app/ingestion/indexer.py`` imports the evidence side from here so the
+``app/infrastructure/qdrant/indexer.py`` imports the evidence side from here so the
 matter_evidence point shape is defined once, never duplicated.
 """
 

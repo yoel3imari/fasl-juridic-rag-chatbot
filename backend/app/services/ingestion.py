@@ -13,8 +13,6 @@ import os
 from pathlib import Path
 from typing import Final
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.domain.ingestion.classifier import classify
 from app.domain.ingestion.errors import (
     CorruptFileError,
@@ -27,6 +25,7 @@ from app.domain.ingestion.sections import build_sections
 from app.infrastructure.ingestion.extract import extract_pages
 from app.infrastructure.qdrant import indexer as indexer_mod
 from app.infrastructure.qdrant.indexer import EvidencePoint
+from app.models.base import AsyncSession
 
 ALLOWED_SUFFIXES: Final[frozenset[str]] = frozenset({".pdf", ".docx", ".txt", ".md"})
 MAX_UPLOAD_BYTES: Final[int] = 20_000_000

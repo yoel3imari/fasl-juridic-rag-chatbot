@@ -8,7 +8,7 @@ only after each successful response, and ETA from local char counts (the
 server reports 0 prompt tokens).
 
 Never claims success on failure (mirror of
-``app.ingestion.pipeline._embed_and_index`` / ``pipeline.py:165-171``):
+``app.services.ingestion._embed_and_index`` / ``services/ingestion.py:165-171``):
 repeated transport failure raises and leaves chunk rows ``pending``.
 
 No parallel embed calls: the server serializes, so batches go sequentially.

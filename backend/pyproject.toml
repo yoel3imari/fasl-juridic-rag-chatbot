@@ -115,7 +115,6 @@ ban-relative-imports = "parents"
 "app/cli/**" = ["TID251"]
 "app/config/**" = ["TID251"]
 "app/infrastructure/**" = ["TID251"]
-"app/ingestion/**" = ["TID251"]
 "app/library/**" = ["TID251"]
 "app/models/**" = ["TID251"]
 "app/repositories/**" = ["TID251"]
