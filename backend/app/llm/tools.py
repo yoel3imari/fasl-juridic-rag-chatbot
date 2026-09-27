@@ -28,7 +28,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from app.search import service as svc
+from app.services import search as svc
 
 MAX_TOOL_ROUNDS: int = 3
 

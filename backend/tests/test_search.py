@@ -81,7 +81,7 @@ def _seed_authority(store):
 
 
 async def test_hybrid_fusion_surfaces_dense_and_lexical_hits() -> None:
-    from app.search import service as svc
+    from app.services import search as svc
 
     svc.clear_search_cache()
     store = _make_store()
@@ -134,7 +134,7 @@ async def test_hybrid_fusion_surfaces_dense_and_lexical_hits() -> None:
 
 
 async def test_empty_matter_returns_empty_with_matter_id_echo() -> None:
-    from app.search import service as svc
+    from app.services import search as svc
 
     svc.clear_search_cache()
     out = await svc.search_matter(
@@ -152,7 +152,7 @@ async def test_empty_matter_returns_empty_with_matter_id_echo() -> None:
 
 
 async def test_both_domains_return_separate_labeled_lists() -> None:
-    from app.search import service as svc
+    from app.services import search as svc
 
     svc.clear_search_cache()
     store = _make_store()
@@ -175,7 +175,7 @@ async def test_both_domains_return_separate_labeled_lists() -> None:
 
 
 async def test_authority_hits_carry_version_and_edition() -> None:
-    from app.search import service as svc
+    from app.services import search as svc
 
     svc.clear_search_cache()
     store = _make_store()
@@ -194,7 +194,7 @@ async def test_authority_hits_carry_version_and_edition() -> None:
 
 
 async def test_cache_key_includes_matter_id() -> None:
-    from app.search import service as svc
+    from app.services import search as svc
 
     svc.clear_search_cache()
     calls: list = []

@@ -448,12 +448,12 @@ def test_search_503_detail_suffix_is_preserved(
 
     class _BoomEmbedder:
         async def embed(self, texts: list[str]) -> list[list[float]]:
-            from app.search import service as svc
+            from app.services import search as svc
 
             raise svc.EmbeddingUnavailableError("synthetic embedder outage")
 
     monkeypatch.setattr(search_mod, "get_embedder", lambda: _BoomEmbedder())
-    from app.search import service as svc_mod
+    from app.services import search as svc_mod
 
     svc_mod.clear_search_cache()
     monkeypatch.setenv("MATTER_PRIVACY_MODE", "strict")

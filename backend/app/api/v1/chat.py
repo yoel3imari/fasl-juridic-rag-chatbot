@@ -31,7 +31,7 @@ from app.llm import tools as react_tools
 from app.models.base import get_db
 from app.models.conversation import Conversation, Message
 from app.repositories import settings as settings_store
-from app.search import service as svc
+from app.services import search as svc
 
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 
@@ -316,6 +316,15 @@ def _privacy_http(
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
+# SSE session scope (plan todo 26, evidence from todo 7): fastapi is pinned
+# `fastapi>=0.141,<0.142` (installed 0.141.1). A bare `Depends(get_db)` uses the
+# default scope, which measured identical to `scope="request"`: the dependency
+# teardown runs AFTER the whole response body is sent, so the AsyncSession stays
+# open for every generator below (_gen_failed, _gen_direct_agent, _gen_empty, _gen)
+# and their mid-stream/post-stream `session.commit()` calls run on that same live
+# session. Adding `scope="function"` would close it BEFORE the stream and break
+# those commits - do NOT add it. See
+# .omo/evidence/backend-architecture-refactor/07/scope-timing.txt
 @router.post("")
 async def chat_rag(
     body: RagChatIn, session: Annotated[AsyncSession, Depends(get_db)]

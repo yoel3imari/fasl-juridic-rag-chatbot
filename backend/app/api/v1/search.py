@@ -12,7 +12,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app.search import service as svc
+from app.services import search as svc
 
 router = APIRouter(prefix="/api/v1/search", tags=["search"])
 

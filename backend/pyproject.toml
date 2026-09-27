@@ -121,7 +121,6 @@ ban-relative-imports = "parents"
 "app/models/**" = ["TID251"]
 "app/repositories/**" = ["TID251"]
 "app/schemas/**" = ["TID251"]
-"app/search/**" = ["TID251"]
 "alembic/**" = ["TID251"]
 "data/**" = ["TID251"]
 "scripts/**" = ["TID251"]
@@ -174,8 +173,8 @@ ban-relative-imports = "parents"
 # total order; `cli` sits directly under `api` because it may import everything
 # except `api`. `domain` is the bottom layer. Optional layers are parenthesised
 # so a not-yet-created package is skipped instead of raising; drop the
-# parentheses in the todo that creates that package (8 -> domain, 26 -> services,
-# 10 -> infrastructure, 39 -> cli). `include_external_packages` is required for
+# parentheses in the todo that creates that package (39 -> cli). `include_external_packages`
+# is required for
 # the forbidden contract to see the `fastapi`/`sqlalchemy` nodes.
 [tool.importlinter]
 root_package = "app"
@@ -188,7 +187,7 @@ type = "layers"
 layers = [
     "app.api",
     "(app.cli)",
-    "(app.services)",
+    "app.services",
     "app.infrastructure",
     "app.repositories",
     "app.models",

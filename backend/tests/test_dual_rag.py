@@ -226,7 +226,7 @@ def _wire(
     embedder: _FakeEmbedder,
     agent: _FakeAgent,
 ) -> None:
-    from app.search import service as svc_mod
+    from app.services import search as svc_mod
 
     svc_mod.clear_search_cache()
     monkeypatch.setattr(chat_mod, "get_store", lambda: store)
