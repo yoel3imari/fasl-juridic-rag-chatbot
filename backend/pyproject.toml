@@ -131,6 +131,7 @@ ban-relative-imports = "parents"
 "alembic/versions/0005_artifact_sha256.py" = ["I001"]
 "app/domain/analysis/engine.py" = ["E501"]
 "app/api/v1/chat.py" = ["E501"]
+"app/schemas/chat.py" = ["E501"]
 "app/api/v1/drafts.py" = ["UP017"]
 "app/api/v1/library.py" = ["B905", "E501", "F401"]
 "app/api/v1/search.py" = ["B008"]
