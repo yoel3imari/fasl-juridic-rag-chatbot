@@ -5,40 +5,12 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
-from pydantic import BaseModel
 
 from app.config import settings
+from app.schemas.library import CoverageEntry, LibraryUploadOut
 from app.services import library_coverage
 
 router = APIRouter(prefix="/api/v1/library", tags=["library"])
-
-
-class CoverageEntry(BaseModel):
-    source: str
-    version: str
-    edition: str
-    pub_date: str | None = None
-    doc_date: str | None = None
-    hijri_date: str | None = None
-    language: str | None = None
-    coverage_note: str | None = None
-    chunks: int = 0
-    status: str = "pending"
-
-
-class LibraryUploadOut(BaseModel):
-    status: str
-    source: str
-    version: str
-    edition: str
-    pub_date: str | None = None
-    doc_date: str | None = None
-    hijri_date: str | None = None
-    language: str | None = None
-    coverage_note: str | None = None
-    chunks: int
-    embedded: int
-    message: str
 
 
 @router.get("/coverage")

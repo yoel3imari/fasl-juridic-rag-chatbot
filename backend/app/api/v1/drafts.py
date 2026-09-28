@@ -7,7 +7,7 @@ Endpoints:
 - POST /api/v1/drafts/{draft_id}/transition {to_state, reviewer?} → generic
   transition; unknown to_state → 400.
 
-Response shape: see app.api.v1.draft_schemas (contract for task 10).
+Response shape: see app.schemas.drafts (contract for task 10).
 
 Grounding: drafts assemble from the matter's latest Analysis content_json
 plus authority citations already stored in the matter's message
@@ -32,12 +32,6 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.draft_schemas import (
-    DraftCreateIn,
-    DraftOut,
-    LawyerReviewIn,
-    TransitionIn,
-)
 from app.config import Settings
 from app.config.resolver import (
     ResolvedLlmSettings,
@@ -54,6 +48,12 @@ from app.infrastructure import llm as llm_mod
 from app.models.base import get_db
 from app.models.draft import Draft, ReviewState
 from app.repositories.draft import DraftRepository
+from app.schemas.drafts import (
+    DraftCreateIn,
+    DraftOut,
+    LawyerReviewIn,
+    TransitionIn,
+)
 
 matters_router = APIRouter(prefix="/api/v1/matters", tags=["drafts"])
 drafts_router = APIRouter(prefix="/api/v1/drafts", tags=["drafts"])

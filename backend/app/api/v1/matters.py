@@ -10,33 +10,14 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.errors import map_error
 from app.models.base import get_db
 from app.repositories.matter import MatterRepository
+from app.schemas.matters import MatterCreateIn, MatterOut
 
 router = APIRouter(prefix="/api/v1/matters", tags=["matters"])
-
-
-class MatterCreateIn(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    title: str = Field(min_length=1, max_length=255)
-    matter_type: str = Field(default="general", max_length=100)
-    jurisdiction: str = Field(default="casablanca", max_length=100)
-    language: str = Field(default="ar", max_length=10)
-
-
-class MatterOut(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    id: int
-    title: str
-    matter_type: str
-    jurisdiction: str
-    language: str
 
 
 @router.post("", response_model=MatterOut, status_code=status.HTTP_201_CREATED)

@@ -12,7 +12,6 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
-from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.errors import map_error
@@ -25,41 +24,10 @@ from app.domain.ingestion.errors import (
 )
 from app.domain.ingestion.schemas import UploadInput
 from app.models.base import get_db
+from app.schemas.documents import SectionOut, UploadOut
 from app.services import ingestion as pipeline_mod
 
 router = APIRouter(prefix="/api/v1/matters", tags=["documents"])
-
-
-class SectionOut(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    section_id: str
-    parent_section_id: str | None
-    title: str
-    page_start: int
-    page_end: int
-    span_start: int
-    span_end: int
-    faithful_text: str
-    normalized_text: str
-    ocr_confidence: float | None
-    needs_review: bool
-
-
-class UploadOut(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    matter_id: int
-    document_id: int
-    version_no: int
-    filename: str
-    doc_type: str
-    status: str
-    needs_review: bool
-    blob_ref: str
-    indexed_count: int
-    error: str | None
-    sections: list[SectionOut]
 
 
 @router.post(

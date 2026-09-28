@@ -7,24 +7,13 @@ Qdrant down → 503 with retry hint; CrispEmbed down → 503.
 
 from __future__ import annotations
 
-from typing import Literal
-
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, Field
 
 from app.api import deps
+from app.schemas.search import Domain, SearchBody
 from app.services import search as svc
 
 router = APIRouter(prefix="/api/v1/search", tags=["search"])
-
-Domain = Literal["matter", "authority", "both"]
-
-
-class SearchBody(BaseModel):
-    query: str = Field(min_length=1)
-    domain: Domain = "both"
-    matter_id: int | None = None
-    top_k: int = Field(default=5, ge=1, le=30)
 
 
 def _require_matter(domain: str, matter_id: int | None) -> int:

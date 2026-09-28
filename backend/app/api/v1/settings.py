@@ -3,32 +3,14 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ConfigDict, Field
 
 from app.config import Settings
 from app.config.resolver import resolve_llm_settings, resolve_privacy_mode
 from app.infrastructure.llm.agent import KNOWN_PROVIDERS
 from app.repositories import settings as settings_store
+from app.schemas.settings import LlmSettingsResponse, LlmSettingsUpdate
 
 router = APIRouter(prefix="/api/v1/settings", tags=["settings"])
-
-
-class LlmSettingsResponse(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    current_provider: str
-    current_model: str
-    privacy_mode: str
-    keys_status: dict[str, bool]
-    masked_keys: dict[str, str | None]
-
-
-class LlmSettingsUpdate(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    provider: str | None = None
-    model: str | None = None
-    api_keys: dict[str, str | None] | None = Field(default=None)
 
 
 def _resolve_current() -> tuple[str, str, str]:

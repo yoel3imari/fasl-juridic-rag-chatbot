@@ -6,52 +6,17 @@ shapes rows into the response models and maps missing rows onto 404.
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.errors import NotFoundError, map_error
 from app.models.base import get_db
 from app.repositories.conversation import ConversationRepository
+from app.schemas.conversations import ConversationDetailOut, ConversationOut, MessageOut
 
 router = APIRouter(prefix="/api/v1/conversations", tags=["conversations"])
-
-
-class MessageOut(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    id: int
-    conversation_id: int
-    role: str
-    content: str
-    citations_json: Any | None = None
-    created_at: datetime
-
-
-class ConversationOut(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    id: int
-    matter_id: int
-    matter_title: str | None = None
-    title: str
-    created_at: datetime
-    message_count: int = 0
-    preview: str | None = None
-
-
-class ConversationDetailOut(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    id: int
-    matter_id: int
-    matter_title: str | None = None
-    title: str
-    created_at: datetime
-    messages: list[MessageOut]
 
 
 @router.get("", response_model=list[ConversationOut])

@@ -20,7 +20,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import deps
@@ -44,7 +44,7 @@ from app.infrastructure.rerank.flashrank import rerank
 from app.models.base import get_db
 from app.models.conversation import Conversation, Message
 from app.repositories import settings as settings_store
-from app.schemas.chat import PROVIDERS, ProviderOption
+from app.schemas.chat import PROVIDERS, ChatIn, ModelsResponse, RagChatIn
 from app.services import chat as react_tools
 from app.services import search as svc
 
@@ -54,36 +54,8 @@ RETRIEVE_TOP_K: int = 30
 RERANK_TOP_K: int = 10
 
 
-class ChatIn(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    matter_id: int
-    conversation_id: int | None = None
-    content: str
-    consent: bool = False
-    system: str | None = None
-
-
 async def _send_error(ws: WebSocket, code: str, detail: str) -> None:
     await ws.send_text(json.dumps({"type": "error", "code": code, "detail": detail}))
-
-
-class RagChatIn(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    matter_id: int
-    content: str = Field(min_length=1)
-    conversation_id: int | None = None
-    consent: bool = False
-    provider: str | None = None
-    model: str | None = None
-
-
-class ModelsResponse(BaseModel):
-    current_provider: str
-    current_model: str
-    privacy_mode: str
-    providers: list[ProviderOption]
 
 
 @router.get("/models", response_model=ModelsResponse)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.privacy import EXTERNAL_PROVIDERS, LOCAL_PROVIDERS
 
@@ -197,3 +197,31 @@ PROVIDERS: list[ProviderOption] = [
 ]
 
 assert {p.id for p in PROVIDERS} == EXTERNAL_PROVIDERS | LOCAL_PROVIDERS
+
+
+class ChatIn(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    matter_id: int
+    conversation_id: int | None = None
+    content: str
+    consent: bool = False
+    system: str | None = None
+
+
+class RagChatIn(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    matter_id: int
+    content: str = Field(min_length=1)
+    conversation_id: int | None = None
+    consent: bool = False
+    provider: str | None = None
+    model: str | None = None
+
+
+class ModelsResponse(BaseModel):
+    current_provider: str
+    current_model: str
+    privacy_mode: str
+    providers: list[ProviderOption]
