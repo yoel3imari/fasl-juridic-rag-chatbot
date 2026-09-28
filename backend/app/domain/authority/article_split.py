@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 
-from app.library.granite_tokens import (
+from app.domain.authority.granite_tokens import (
     MAX_GRANITE_TOKENS,
     count_granite_tokens,
     granite_overlap_prefix,

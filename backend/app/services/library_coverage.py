@@ -7,10 +7,10 @@ import re
 from pathlib import Path
 
 from app.config import settings
+from app.infrastructure.authority.extractor import extract_chunks
+from app.infrastructure.authority.manifest import ManifestEntry
 from app.infrastructure.embeddings.client import CrispEmbedClient
 from app.infrastructure.qdrant.store import QdrantStore
-from app.library.extractor import extract_chunks
-from app.library.manifest import ManifestEntry
 from app.repositories.library_import import read_ledger_summary, zero_ledger_summary
 from app.services.library_seed import build_provenance
 
@@ -153,7 +153,7 @@ async def upload_library_document(
     # Extract chunks
     extracted = extract_chunks(str(target_path))
     if not extracted and content:
-        from app.library.extractor import Chunk
+        from app.infrastructure.authority.extractor import Chunk
 
         text_str = content.decode("utf-8", errors="ignore")
         if text_str.strip():

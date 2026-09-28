@@ -82,7 +82,7 @@ NEWLINE_WEIGHT = 4
 
 def served_estimate(text: str) -> int:
     """Conservative served-token estimate: local tokens + weighted newlines."""
-    from app.library.granite_tokens import count_granite_tokens
+    from app.domain.authority.granite_tokens import count_granite_tokens
 
     return count_granite_tokens(text) + NEWLINE_WEIGHT * text.count("\n")
 

@@ -19,8 +19,8 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
+from app.infrastructure.authority.extractor import Chunk
 from app.library.artifacts import build_record
-from app.library.extractor import Chunk
 from app.services.library_seed import chunk_id as make_chunk_id
 
 _OCR_LANGS = "ara+fra"
@@ -132,9 +132,9 @@ def split_pages_fallback(
     guarantees as T11: real page numbers, ``{"code": …}`` hierarchy, served
     length <= cap, continuations keep their section label.
     """
-    from app.library.article_split import split_article
-    from app.library.granite_tokens import MAX_GRANITE_TOKENS, count_granite_tokens
-    from app.library.law_patterns import code_for
+    from app.domain.authority.article_split import split_article
+    from app.domain.authority.granite_tokens import MAX_GRANITE_TOKENS, count_granite_tokens
+    from app.domain.authority.law_patterns import code_for
 
     code = code_for(source_path)
     chunks: list[Chunk] = []
@@ -180,7 +180,7 @@ def split_pages_fallback(
 
 def run_job(job: ExtractJob) -> ExtractResult:
     """Extract + chunk + record-build ONE file. Pure: no DB, no JSON writes."""
-    from app.library.extractor import split_statute_structure
+    from app.infrastructure.authority.extractor import split_statute_structure
 
     if not os.path.exists(job.abs_path):
         return ExtractResult(job.rel, "quarantined", [], "missing: source file gone")

@@ -20,9 +20,9 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from app.library.article_split import split_article
-from app.library.granite_tokens import MAX_GRANITE_TOKENS, count_granite_tokens
-from app.library.law_patterns import (
+from app.domain.authority.article_split import split_article
+from app.domain.authority.granite_tokens import MAX_GRANITE_TOKENS, count_granite_tokens
+from app.domain.authority.law_patterns import (
     FOLDER_CODE_MAP,
     HEADER_CONT_RE,
     HEADING_RES,

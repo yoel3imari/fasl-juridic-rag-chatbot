@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.library.extractor import (
+from app.infrastructure.authority.extractor import (
     FOLDER_CODE_MAP,
     MAX_GRANITE_TOKENS,
     count_granite_tokens,

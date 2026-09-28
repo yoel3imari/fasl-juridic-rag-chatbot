@@ -119,7 +119,7 @@ def test_eligibility_failed_and_pending_are_skipped() -> None:
 
 
 def test_page_fallback_splits_overlong_page_with_linkage() -> None:
-    from app.library.granite_tokens import MAX_GRANITE_TOKENS, count_granite_tokens
+    from app.domain.authority.granite_tokens import MAX_GRANITE_TOKENS, count_granite_tokens
 
     long_page = " ".join(f"جملة رقم {i} من النص القانوني الطويل." for i in range(400))
     assert count_granite_tokens(long_page) > MAX_GRANITE_TOKENS

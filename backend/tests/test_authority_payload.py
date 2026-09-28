@@ -135,8 +135,8 @@ def test_point_id_uuid5_stable_and_distinct():
 
 
 def test_build_provenance_carries_new_keys():
-    from app.library.extractor import Chunk
-    from app.library.manifest import EditionType, ManifestEntry
+    from app.infrastructure.authority.extractor import Chunk
+    from app.infrastructure.authority.manifest import EditionType, ManifestEntry
     from app.services.library_seed import build_provenance
 
     entry = ManifestEntry(

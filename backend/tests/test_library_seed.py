@@ -1,7 +1,7 @@
 import json
 
 import pytest
-from app.library.manifest import EditionType, LibraryManifest, ManifestEntry
+from app.infrastructure.authority.manifest import EditionType, LibraryManifest, ManifestEntry
 
 
 def test_seed_records_edition_and_version():
@@ -30,7 +30,7 @@ def test_manifest_entry_requires_source_and_version():
 
 def test_extractor_splits_arabic_article_structure():
     """Arabic الماد ة regex splits text into article-level chunks with hierarchy."""
-    from app.library.extractor import extract_chunks
+    from app.infrastructure.authority.extractor import extract_chunks
 
     text = (
         "المادة 1 - مدة العطلة السنوية\n"
@@ -63,7 +63,7 @@ def test_extractor_splits_arabic_article_structure():
 
 def test_provenance_records_all_required_fields():
     """build_provenance captures source/version/edition/language/coverage."""
-    from app.library.extractor import Chunk
+    from app.infrastructure.authority.extractor import Chunk
     from app.services.library_seed import build_provenance
 
     entry = ManifestEntry(

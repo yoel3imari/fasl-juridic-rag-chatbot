@@ -6,9 +6,9 @@ import hashlib
 import json
 from pathlib import Path
 
+from app.infrastructure.authority.extractor import extract_chunks
+from app.infrastructure.authority.manifest import LibraryManifest
 from app.infrastructure.embeddings.client import CrispEmbedClient
-from app.library.extractor import extract_chunks
-from app.library.manifest import LibraryManifest
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 REPO_ROOT = BACKEND_DIR.parent

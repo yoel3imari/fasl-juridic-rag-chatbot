@@ -30,7 +30,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from app.library.manifest import EditionType, ManifestEntry
+from app.infrastructure.authority.manifest import EditionType, ManifestEntry
 
 AR_GENERAL = EditionType.AR_GENERAL.value
 FR_TRANSLATION = EditionType.FR_TRANSLATION.value

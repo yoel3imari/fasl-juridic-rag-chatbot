@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.library.catalog import parse_filename
+from app.infrastructure.authority.catalog import parse_filename
 
 CIVIL = "المادة المدنية"
 COMMERCE = "المادة التجارية"
