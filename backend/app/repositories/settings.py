@@ -13,13 +13,9 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-SUPPORTED_KEY_PROVIDERS: tuple[str, ...] = (
-    "openrouter",
-    "openai",
-    "anthropic",
-    "google",
-    "groq",
-)
+from app.domain.privacy import EXTERNAL_PROVIDER_IDS
+
+SUPPORTED_KEY_PROVIDERS: tuple[str, ...] = EXTERNAL_PROVIDER_IDS
 
 
 def get_settings_path() -> Path:

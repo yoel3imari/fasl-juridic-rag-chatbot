@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
+from app.domain.privacy import EXTERNAL_PROVIDERS, LOCAL_PROVIDERS
+
 
 class ModelOption(BaseModel):
     id: str
@@ -22,12 +24,28 @@ class ProviderOption(BaseModel):
     models: list[ModelOption]
 
 
+def _provider(
+    id: str,
+    name: str,
+    description: str,
+    default_model: str,
+    models: list[ModelOption],
+) -> ProviderOption:
+    return ProviderOption(
+        id=id,
+        name=name,
+        type="local" if id in LOCAL_PROVIDERS else "cloud",
+        is_external=id in EXTERNAL_PROVIDERS,
+        description=description,
+        default_model=default_model,
+        models=models,
+    )
+
+
 PROVIDERS: list[ProviderOption] = [
-    ProviderOption(
+    _provider(
         id="ollama",
         name="Ollama (Local)",
-        type="local",
-        is_external=False,
         description="Local on-device inference with zero data transmission. Strict privacy compliant.",
         default_model="llama3.2",
         models=[
@@ -60,11 +78,9 @@ PROVIDERS: list[ProviderOption] = [
             ),
         ],
     ),
-    ProviderOption(
+    _provider(
         id="openrouter",
         name="OpenRouter (Unified Cloud)",
-        type="cloud",
-        is_external=True,
         description="Access dozens of state-of-the-art models via OpenRouter unified gateway.",
         default_model="anthropic/claude-3.5-sonnet",
         models=[
@@ -97,11 +113,9 @@ PROVIDERS: list[ProviderOption] = [
             ),
         ],
     ),
-    ProviderOption(
+    _provider(
         id="openai",
         name="OpenAI",
-        type="cloud",
-        is_external=True,
         description="Direct OpenAI API connection (requires OPENAI_API_KEY).",
         default_model="gpt-4o",
         models=[
@@ -123,11 +137,9 @@ PROVIDERS: list[ProviderOption] = [
             ),
         ],
     ),
-    ProviderOption(
+    _provider(
         id="anthropic",
         name="Anthropic",
-        type="cloud",
-        is_external=True,
         description="Direct Anthropic Claude API connection (requires ANTHROPIC_API_KEY).",
         default_model="claude-3-5-sonnet-latest",
         models=[
@@ -144,11 +156,9 @@ PROVIDERS: list[ProviderOption] = [
             ),
         ],
     ),
-    ProviderOption(
+    _provider(
         id="google",
         name="Google Gemini",
-        type="cloud",
-        is_external=True,
         description="Direct Google Gemini API connection (requires GEMINI_API_KEY).",
         default_model="gemini-2.0-flash",
         models=[
@@ -165,11 +175,9 @@ PROVIDERS: list[ProviderOption] = [
             ),
         ],
     ),
-    ProviderOption(
+    _provider(
         id="groq",
         name="Groq",
-        type="cloud",
-        is_external=True,
         description="Ultra-low latency LPU cloud inference (requires GROQ_API_KEY).",
         default_model="llama-3.3-70b-versatile",
         models=[
@@ -187,3 +195,5 @@ PROVIDERS: list[ProviderOption] = [
         ],
     ),
 ]
+
+assert {p.id for p in PROVIDERS} == EXTERNAL_PROVIDERS | LOCAL_PROVIDERS

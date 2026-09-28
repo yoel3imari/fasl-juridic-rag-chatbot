@@ -45,9 +45,17 @@ class ConsentRequiredError(Exception):
 # lookup is the exact seam the deferred user-defined-provider plan replaces with
 # a fail-closed, user-declared locality field. Marked, deliberately unchanged
 # here: this plan freezes provider values and adds no capability.
-EXTERNAL_PROVIDERS: frozenset[str] = frozenset(
-    {"openai", "groq", "anthropic", "google", "openrouter"}
+# EXTERNAL_PROVIDER_IDS is the canonical ordered registry (todo 33): the
+# order is load-bearing (it feeds settings-store dicts), so the key-provider
+# list aliases it directly instead of restating the names.
+EXTERNAL_PROVIDER_IDS: tuple[str, ...] = (
+    "openrouter",
+    "openai",
+    "anthropic",
+    "google",
+    "groq",
 )
+EXTERNAL_PROVIDERS: frozenset[str] = frozenset(EXTERNAL_PROVIDER_IDS)
 LOCAL_PROVIDERS: frozenset[str] = frozenset({"ollama"})
 
 # Heuristic markers for retrieved matter spans (see task 7 domain tags).
