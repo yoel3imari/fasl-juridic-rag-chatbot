@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.errors import NotFoundError, map_error
 from app.models.base import get_db
 from app.repositories.conversation import ConversationRepository
 
@@ -85,10 +86,7 @@ async def get_conversation(
     repo = ConversationRepository(session)
     conv = await repo.get(conversation_id)
     if conv is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="conversation not found",
-        )
+        raise HTTPException(*map_error(NotFoundError("conversation not found")))
 
     sorted_messages = sorted(conv.messages, key=lambda m: m.id)
 
@@ -121,9 +119,6 @@ async def delete_conversation(
     repo = ConversationRepository(session)
     deleted = await repo.delete(conversation_id)
     if not deleted:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="conversation not found",
-        )
+        raise HTTPException(*map_error(NotFoundError("conversation not found")))
     await session.commit()
     return {"status": "deleted", "id": conversation_id}

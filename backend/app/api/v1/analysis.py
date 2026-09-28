@@ -14,10 +14,11 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.errors import NotFoundError, map_error
 from app.domain.analysis.engine import build_analysis
 from app.models.base import get_db
 from app.repositories.analysis import AnalysisRepository
@@ -54,7 +55,7 @@ async def create_analysis(
     try:
         repo = AnalysisRepository(session)
         if not await repo.matter_exists(matter_id):
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="matter not found")
+            raise HTTPException(*map_error(NotFoundError("matter not found")))
         sections = await repo.list_sections(matter_id)
         doc_types = await repo.list_doc_types(matter_id)
         user_messages = await repo.list_user_message_contents(matter_id)
@@ -77,8 +78,5 @@ async def create_analysis(
         raise
     except Exception as exc:
         await session.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"analysis failed: {exc}",
-        ) from exc
+        raise HTTPException(*map_error(exc, context="analysis failed")) from exc
     return AnalysisOut(matter_id=matter_id, analysis_id=analysis_id, kind=row.kind, content=content)

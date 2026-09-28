@@ -11,11 +11,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.errors import map_error
 from app.models.base import get_db
-from app.models.matter import Matter
+from app.repositories.matter import MatterRepository
 
 router = APIRouter(prefix="/api/v1/matters", tags=["matters"])
 
@@ -45,14 +45,9 @@ async def create_matter(
 ) -> MatterOut:
     """Create a matter row; returns its id for uploads/analysis/chat."""
     try:
-        row = Matter(
-            title=body.title,
-            matter_type=body.matter_type,
-            jurisdiction=body.jurisdiction,
-            language=body.language,
+        row = await MatterRepository(session).create(
+            body.title, body.matter_type, body.jurisdiction, body.language
         )
-        session.add(row)
-        await session.flush()
         out = MatterOut(
             id=row.id,
             title=row.title,
@@ -63,10 +58,7 @@ async def create_matter(
         await session.commit()
     except Exception as exc:
         await session.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"matter creation failed: {exc}",
-        ) from exc
+        raise HTTPException(*map_error(exc, context="matter creation failed")) from exc
     return out
 
 
@@ -75,7 +67,7 @@ async def list_matters(
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> list[MatterOut]:
     """List all matters (single-user local app: no pagination needed)."""
-    rows = (await session.execute(select(Matter).order_by(Matter.id))).scalars().all()
+    rows = await MatterRepository(session).list()
     return [
         MatterOut(
             id=r.id,

@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.errors import map_error
 from app.domain.ingestion.errors import (
     CorruptFileError,
     MatterNotFoundError,
@@ -83,21 +84,15 @@ async def upload_document(
                 content_type=file.content_type,
             ),
         )
-    except MatterNotFoundError as exc:
+    except (
+        MatterNotFoundError,
+        OversizeError,
+        UnsupportedTypeError,
+        CorruptFileError,
+        StorageError,
+    ) as exc:
         await session.rollback()
-        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
-    except OversizeError as exc:
-        await session.rollback()
-        raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, str(exc)) from exc
-    except UnsupportedTypeError as exc:
-        await session.rollback()
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
-    except CorruptFileError as exc:
-        await session.rollback()
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
-    except StorageError as exc:
-        await session.rollback()
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(exc)) from exc
+        raise HTTPException(*map_error(exc)) from exc
     # Pipeline owns its commits (provenance, then status); this is a no-op
     # safety net when the pipeline already committed.
     await session.commit()
