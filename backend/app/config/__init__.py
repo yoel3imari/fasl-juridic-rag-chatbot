@@ -1,4 +1,15 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Backend-root anchor (plan todo 40): the SINGLE named constant every
+# data-dir path derives from. Per-file `Path(__file__).parents[N]`
+# arithmetic is correct only at one exact nesting depth and silently
+# repoints when a module moves (todos 34 and 39 both broke this), so the
+# depth math lives here alone with this comment instead of scattered
+# across services. config/__init__.py sits at backend/app/config/, so
+# backend/ is parents[2]; re-verify the printed value if this file moves.
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):

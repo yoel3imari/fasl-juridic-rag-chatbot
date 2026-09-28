@@ -6,7 +6,7 @@ import json
 import re
 from pathlib import Path
 
-from app.config import settings
+from app.config import BACKEND_ROOT, settings
 from app.infrastructure.authority.extractor import extract_chunks
 from app.infrastructure.authority.manifest import ManifestEntry
 from app.infrastructure.embeddings.client import CrispEmbedClient
@@ -14,9 +14,10 @@ from app.infrastructure.qdrant.store import QdrantStore
 from app.repositories.library_import import read_ledger_summary, zero_ledger_summary
 from app.services.library_seed import build_provenance
 
-BACKEND_DIR = Path(__file__).resolve().parents[2]
-MANIFEST_PATH = BACKEND_DIR / "data" / "library-manifest.json"
-SEED_STATE_PATH = BACKEND_DIR / "data" / "library-seed-state.json"
+# Data-dir paths derive from the single BACKEND_ROOT anchor (app.config)
+# instead of per-file __file__ depth arithmetic; see its comment for why.
+MANIFEST_PATH = BACKEND_ROOT / "data" / "library-manifest.json"
+SEED_STATE_PATH = BACKEND_ROOT / "data" / "library-seed-state.json"
 
 # Task 17: bounded lists. Old clients keep reading `titles`/`gaps` unchanged;
 # entries past the cap are only counted, never reordered or reshaped.
@@ -142,7 +143,7 @@ async def upload_library_document(
     edition_clean = edition.strip() or "ar-general"
 
     # Save file to seed directory
-    seed_dir = BACKEND_DIR / "data" / "seed"
+    seed_dir = BACKEND_ROOT / "data" / "seed"
     seed_dir.mkdir(parents=True, exist_ok=True)
 
     safe_name = re.sub(r"[^a-zA-Z0-9_\.-]", "_", filename)
