@@ -11,7 +11,8 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 import app.api.v1.library as libmod
-from app.api.v1.library import coverage
+import app.services.library_coverage as covmod
+from app.services.library_coverage import coverage
 
 LEDGER_SCHEMA = """
 CREATE TABLE library_import_files (
@@ -152,8 +153,8 @@ def small_corpus(tmp_path, monkeypatch):
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr(libmod, "MANIFEST_PATH", manifest)
-    monkeypatch.setattr(libmod, "SEED_STATE_PATH", seed)
+    monkeypatch.setattr(covmod, "MANIFEST_PATH", manifest)
+    monkeypatch.setattr(covmod, "SEED_STATE_PATH", seed)
     monkeypatch.setattr(libmod.settings, "DATABASE_URL", f"sqlite+aiosqlite:///{db}")
     return tmp_path
 
@@ -241,8 +242,8 @@ async def test_lists_truncate_at_200(tmp_path, monkeypatch):
             for i in range(250)
         ],
     )
-    monkeypatch.setattr(libmod, "MANIFEST_PATH", manifest)
-    monkeypatch.setattr(libmod, "SEED_STATE_PATH", seed)
+    monkeypatch.setattr(covmod, "MANIFEST_PATH", manifest)
+    monkeypatch.setattr(covmod, "SEED_STATE_PATH", seed)
     monkeypatch.setattr(libmod.settings, "DATABASE_URL", f"sqlite+aiosqlite:///{db}")
     cov = await coverage()
     assert len(cov["titles"]) == 200
@@ -259,8 +260,8 @@ async def test_missing_ledger_returns_200_zeros_and_gap(tmp_path, monkeypatch):
     """Missing manifest+ledger: HTTP 200, zero totals, gap string, never 500."""
     from app.main import app
 
-    monkeypatch.setattr(libmod, "MANIFEST_PATH", tmp_path / "no-manifest.json")
-    monkeypatch.setattr(libmod, "SEED_STATE_PATH", tmp_path / "no-seed.json")
+    monkeypatch.setattr(covmod, "MANIFEST_PATH", tmp_path / "no-manifest.json")
+    monkeypatch.setattr(covmod, "SEED_STATE_PATH", tmp_path / "no-seed.json")
     monkeypatch.setattr(
         libmod.settings,
         "DATABASE_URL",
@@ -304,8 +305,8 @@ async def test_ledger_present_but_manifest_missing_keeps_real_summary(
             ),
         ],
     )
-    monkeypatch.setattr(libmod, "MANIFEST_PATH", tmp_path / "no-manifest.json")
-    monkeypatch.setattr(libmod, "SEED_STATE_PATH", tmp_path / "no-seed.json")
+    monkeypatch.setattr(covmod, "MANIFEST_PATH", tmp_path / "no-manifest.json")
+    monkeypatch.setattr(covmod, "SEED_STATE_PATH", tmp_path / "no-seed.json")
     monkeypatch.setattr(libmod.settings, "DATABASE_URL", f"sqlite+aiosqlite:///{db}")
     cov = await coverage()
     assert cov["titles"] == []

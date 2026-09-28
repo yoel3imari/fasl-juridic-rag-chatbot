@@ -39,6 +39,7 @@ from app.api.v1 import library as libmod
 from app.main import app
 from app.models import Base, Matter
 from app.models.base import get_db
+from app.services import library_coverage as covmod
 
 SNAPSHOT_PATH = Path(__file__).parent / "openapi_snapshot.json"
 
@@ -202,8 +203,8 @@ def test_coverage_zero_summary_shape_and_order(
     order; a refactor that reorders or drops a key silently changes the JSON the
     frontend renders.
     """
-    monkeypatch.setattr(libmod, "MANIFEST_PATH", Path("/nonexistent/no-manifest.json"))
-    monkeypatch.setattr(libmod, "SEED_STATE_PATH", Path("/nonexistent/no-seed.json"))
+    monkeypatch.setattr(covmod, "MANIFEST_PATH", Path("/nonexistent/no-manifest.json"))
+    monkeypatch.setattr(covmod, "SEED_STATE_PATH", Path("/nonexistent/no-seed.json"))
     monkeypatch.setattr(libmod.settings, "DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 
     resp = client.get("/api/v1/library/coverage")
@@ -235,10 +236,10 @@ def test_coverage_zero_summary_shape_and_order(
 
 def test_coverage_ledger_missing_gap_text(client: TestClient, monkeypatch) -> None:
     """`LEDGER_MISSING_GAP` is a literal the frontend matches on."""
-    from app.api.v1.library import LEDGER_MISSING_GAP
+    from app.services.library_coverage import LEDGER_MISSING_GAP
 
-    monkeypatch.setattr(libmod, "MANIFEST_PATH", Path("/nonexistent/no-manifest.json"))
-    monkeypatch.setattr(libmod, "SEED_STATE_PATH", Path("/nonexistent/no-seed.json"))
+    monkeypatch.setattr(covmod, "MANIFEST_PATH", Path("/nonexistent/no-manifest.json"))
+    monkeypatch.setattr(covmod, "SEED_STATE_PATH", Path("/nonexistent/no-seed.json"))
     # A file-backed sqlite URL whose file does not exist -> ledger unreadable.
     monkeypatch.setattr(
         libmod.settings, "DATABASE_URL", "sqlite+aiosqlite:///nonexistent/ledger.db"
@@ -254,7 +255,7 @@ def test_coverage_truncation_semantics(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """`COVERAGE_LIST_CAP` bounds the lists; the overflow is only counted."""
-    from app.api.v1.library import COVERAGE_LIST_CAP
+    from app.services.library_coverage import COVERAGE_LIST_CAP
 
     cap = COVERAGE_LIST_CAP
     manifest = tmp_path / "manifest.json"
@@ -274,8 +275,8 @@ def test_coverage_truncation_semantics(
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr(libmod, "MANIFEST_PATH", manifest)
-    monkeypatch.setattr(libmod, "SEED_STATE_PATH", tmp_path / "no-seed.json")
+    monkeypatch.setattr(covmod, "MANIFEST_PATH", manifest)
+    monkeypatch.setattr(covmod, "SEED_STATE_PATH", tmp_path / "no-seed.json")
     monkeypatch.setattr(libmod.settings, "DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 
     resp = client.get("/api/v1/library/coverage")

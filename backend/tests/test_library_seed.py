@@ -161,8 +161,8 @@ def test_coverage_endpoint_returns_all_manifest_entries():
     import asyncio
     import json
 
-    from app.api.v1.library import COVERAGE_LIST_CAP, MANIFEST_PATH, coverage
     from app.config import settings
+    from app.services.library_coverage import COVERAGE_LIST_CAP, MANIFEST_PATH, coverage
 
     cov = asyncio.run(coverage())
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
@@ -229,7 +229,7 @@ async def test_library_upload_endpoint():
         # (durable proof) plus the endpoint shape (HTTP contract proof).
         import json as _json
 
-        from app.api.v1.library import MANIFEST_PATH as _MANIFEST_PATH
+        from app.services.library_coverage import MANIFEST_PATH as _MANIFEST_PATH
 
         stored = _json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
         stored_keys = [
