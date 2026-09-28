@@ -278,16 +278,16 @@ def test_get_search_authority_live_shape() -> None:
 
 
 def test_qdrant_down_returns_503_with_retry_hint(monkeypatch) -> None:
-    import app.api.v1.search as search_mod
+    from app.api import deps as deps_mod
     from app.main import app
 
     class _DownStore:
         def hybrid_query(self, *a, **k):
             raise ConnectionError("qdrant unreachable")
 
-    monkeypatch.setattr(search_mod, "get_store", lambda: _DownStore())
+    monkeypatch.setattr(deps_mod, "get_store", lambda: _DownStore())
     monkeypatch.setattr(
-        search_mod, "get_embedder", lambda: _FakeEmbedder(), raising=True
+        deps_mod, "get_embedder", lambda: _FakeEmbedder(), raising=True
     )
     client = TestClient(app)
     resp = client.post(
@@ -298,15 +298,15 @@ def test_qdrant_down_returns_503_with_retry_hint(monkeypatch) -> None:
 
 
 def test_embedder_down_returns_503(monkeypatch) -> None:
-    import app.api.v1.search as search_mod
+    from app.api import deps as deps_mod
     from app.main import app
 
     class _DownEmbedder:
         async def embed(self, texts):
             raise ConnectionError("crispembed unreachable")
 
-    monkeypatch.setattr(search_mod, "get_store", lambda: _make_store())
-    monkeypatch.setattr(search_mod, "get_embedder", lambda: _DownEmbedder())
+    monkeypatch.setattr(deps_mod, "get_store", lambda: _make_store())
+    monkeypatch.setattr(deps_mod, "get_embedder", lambda: _DownEmbedder())
     client = TestClient(app)
     resp = client.post(
         "/api/v1/search", json={"query": "x", "domain": "authority", "top_k": 3}

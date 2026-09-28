@@ -23,7 +23,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.api.v1 import chat as chat_mod
+from app.api import deps as deps_mod
 from app.domain.search.schemas import AUTHORITY_COLLECTION, EVIDENCE_COLLECTION
 from app.main import app
 from app.models import Base, Conversation, Matter, Message
@@ -229,8 +229,8 @@ def _wire(
     from app.services import search as svc_mod
 
     svc_mod.clear_search_cache()
-    monkeypatch.setattr(chat_mod, "get_store", lambda: store)
-    monkeypatch.setattr(chat_mod, "get_embedder", lambda: embedder)
+    monkeypatch.setattr(deps_mod, "get_store", lambda: store)
+    monkeypatch.setattr(deps_mod, "get_embedder", lambda: embedder)
     from app.infrastructure import llm as llm_mod
 
     monkeypatch.setattr(llm_mod, "get_agent", lambda **kwargs: agent)

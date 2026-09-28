@@ -12,6 +12,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from app.api import deps
 from app.services import search as svc
 
 router = APIRouter(prefix="/api/v1/search", tags=["search"])
@@ -26,20 +27,6 @@ class SearchBody(BaseModel):
     top_k: int = Field(default=5, ge=1, le=30)
 
 
-def get_store() -> svc.Store:
-    """Factory seam: Qdrant store from settings (URL or local path)."""
-    from app.infrastructure.qdrant.store import QdrantStore
-
-    return QdrantStore()  # type: ignore[return-value]
-
-
-def get_embedder() -> svc.Embedder:
-    """Factory seam: CrispEmbed HTTP client (model from settings)."""
-    from app.infrastructure.embeddings.client import CrispEmbedClient
-
-    return CrispEmbedClient()  # type: ignore[return-value]
-
-
 def _require_matter(domain: str, matter_id: int | None) -> int:
     if domain in ("matter", "both") and matter_id is None:
         raise HTTPException(
@@ -50,8 +37,8 @@ def _require_matter(domain: str, matter_id: int | None) -> int:
 
 
 async def _dispatch(domain: Domain, matter_id: int | None, query: str, top_k: int):
-    store = get_store()
-    embedder = get_embedder()
+    store = deps.get_store()
+    embedder = deps.get_embedder()
     try:
         if domain == "matter":
             return await svc.search_matter(

@@ -17,6 +17,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api import deps
 from app.config import Settings
 from app.config.resolver import (
     resolve_llm_settings,
@@ -45,20 +46,6 @@ router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 
 RETRIEVE_TOP_K: int = 30
 RERANK_TOP_K: int = 10
-
-
-def get_store() -> svc.Store:
-    """Factory seam: Qdrant store from settings (URL or local path)."""
-    from app.infrastructure.qdrant.store import QdrantStore
-
-    return QdrantStore()  # type: ignore[return-value]
-
-
-def get_embedder() -> svc.Embedder:
-    """Factory seam: CrispEmbed HTTP client (model from settings)."""
-    from app.infrastructure.embeddings.client import CrispEmbedClient
-
-    return CrispEmbedClient()  # type: ignore[return-value]
 
 
 class ChatIn(BaseModel):
@@ -253,8 +240,8 @@ async def chat_rag(
     await session.commit()
 
     tool_ctx = react_tools.ToolContext(
-        store=get_store(),
-        embedder=get_embedder(),
+        store=deps.get_store(),
+        embedder=deps.get_embedder(),
         matter_id=body.matter_id,
         top_k=RETRIEVE_TOP_K,
     )

@@ -191,7 +191,7 @@ def test_chat_remembers_last_used(
     """POST /api/v1/chat persists provider/model server-side (store update)."""
     import anyio
 
-    from app.api.v1 import chat as chat_mod
+    from app.api import deps as deps_mod
     from app.models import Base, Matter
     from app.models.base import get_db
 
@@ -260,8 +260,8 @@ def test_chat_remembers_last_used(
         def hybrid_query(self, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
             return []
 
-    monkeypatch.setattr(chat_mod, "get_store", lambda: _FakeStore())
-    monkeypatch.setattr(chat_mod, "get_embedder", lambda: _FakeEmbedder())
+    monkeypatch.setattr(deps_mod, "get_store", lambda: _FakeStore())
+    monkeypatch.setattr(deps_mod, "get_embedder", lambda: _FakeEmbedder())
     from app.infrastructure import llm as llm_mod
 
     monkeypatch.setattr(llm_mod, "get_agent", lambda **kwargs: _FakeAgent())

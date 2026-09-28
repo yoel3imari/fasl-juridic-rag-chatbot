@@ -444,7 +444,7 @@ def test_search_503_detail_suffix_is_preserved(
 
     A refactor that centralises the mapping must keep the suffix byte-exact.
     """
-    from app.api.v1 import search as search_mod
+    from app.api import deps as deps_mod
 
     class _BoomEmbedder:
         async def embed(self, texts: list[str]) -> list[list[float]]:
@@ -452,7 +452,7 @@ def test_search_503_detail_suffix_is_preserved(
 
             raise svc.EmbeddingUnavailableError("synthetic embedder outage")
 
-    monkeypatch.setattr(search_mod, "get_embedder", lambda: _BoomEmbedder())
+    monkeypatch.setattr(deps_mod, "get_embedder", lambda: _BoomEmbedder())
     from app.services import search as svc_mod
 
     svc_mod.clear_search_cache()
