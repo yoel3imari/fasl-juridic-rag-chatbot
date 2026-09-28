@@ -21,11 +21,10 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import app.models  # noqa: F401  (register ledger metadata)
-from app.infrastructure.qdrant.store import IndexBatchResult, IndexReconciliationError
-from app.library import bulk_run
-from app.library.artifacts import build_record, sha256_file, write_artifact
-from app.library.bulk_migrate import live_git_sha
-from app.library.bulk_run import (
+from app.cli.library import bulk_run
+from app.cli.library.artifacts import build_record, sha256_file, write_artifact
+from app.cli.library.bulk_migrate import live_git_sha
+from app.cli.library.bulk_run import (
     FAIL_EXIT,
     RunFailed,
     RunRefused,
@@ -35,6 +34,7 @@ from app.library.bulk_run import (
     run_embed,
     scope_file_ids,
 )
+from app.infrastructure.qdrant.store import IndexBatchResult, IndexReconciliationError
 from app.models.base import Base
 from app.models.library_import import (
     LibraryImportChunk,
@@ -443,11 +443,11 @@ def test_embed_prefilter_never_sends_overlong(
             row = await _seed_file(s, tmp_path, "cat/a.pdf", n=2)
             # rewrite artifact: chunk 1 carries the killer text
             adir = tmp_path / "art"
-            from app.library.artifacts import artifact_path_for, write_artifact
+            from app.cli.library.artifacts import artifact_path_for, write_artifact
 
             recs = [_rec(0, row.sha256), _rec(1, row.sha256, text="KILLER " * 50)]
             write_artifact(iter(recs), artifact_path_for(adir, row.sha256))
-            from app.library.artifacts import sha256_file as _sha
+            from app.cli.library.artifacts import sha256_file as _sha
 
             row.artifact_sha256 = _sha(artifact_path_for(adir, row.sha256))
             await s.commit()
@@ -504,7 +504,7 @@ def test_index_marks_only_verified_ids_on_reconciliation_error(
                         chunk_id=f"cid-{i}", file_id=row.id, ord=i, status="embedded"
                     )
                 )
-            from app.library.bulk_run import write_embed_cache
+            from app.cli.library.bulk_run import write_embed_cache
 
             await s.commit()
             write_embed_cache(

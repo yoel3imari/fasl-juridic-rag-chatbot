@@ -1,6 +1,6 @@
 """Gated destructive collection migration: snapshot -> recreate -> indexes.
 
-Plan todo 8. ``python -m app.library.bulk migrate`` refuses unless BOTH
+Plan todo 8. ``python -m app.cli.library.bulk migrate`` refuses unless BOTH
 gate artifacts are fresh and green, then snapshots BOTH collections
 (API download + sha256, asserted BEFORE any delete), backs up the SQLite
 ledger, recreates both collections at the gate-winner dim (dense COSINE +
@@ -60,7 +60,9 @@ class MigrationRefused(Exception):
 
 def _repo_root() -> str:
     here = os.path.dirname(os.path.abspath(__file__))
-    return os.path.dirname(os.path.dirname(os.path.dirname(here)))
+    return os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.dirname(here)))
+    )
 
 
 def live_git_sha() -> str:

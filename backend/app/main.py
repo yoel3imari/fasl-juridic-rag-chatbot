@@ -22,7 +22,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     import logging
 
     try:
-        from app.library.bulk_migrate import startup_dim_check
+        from app.cli.library.bulk_migrate import startup_dim_check
 
         startup_dim_check()
     except Exception as exc:

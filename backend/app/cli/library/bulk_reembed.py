@@ -1,6 +1,6 @@
 """Re-embed existing matter documents at the migrated dim (plan todo 9).
 
-``python -m app.library.bulk reembed-matter`` regenerates dense embeddings
+``python -m app.cli.library.bulk reembed-matter`` regenerates dense embeddings
 for every existing matter document section through the CURRENT model
 (``settings.EMBEDDING_MODEL``) and upserts with the SAME point ids the
 ingestion pipeline used (``f"{document_id}:{section_id}"``, UUID5-mapped
@@ -209,8 +209,8 @@ def _evidence_points(
 
 async def run_reembed(args: argparse.Namespace) -> dict[str, Any]:
     """Execute ``reembed-matter``; raise ReembedFailed on any failure."""
+    from app.cli.library.bulk_migrate import live_git_sha, write_sentinel
     from app.config import settings
-    from app.library.bulk_migrate import live_git_sha, write_sentinel
 
     model = settings.EMBEDDING_MODEL
     dim = int(settings.EMBEDDING_DIM)
@@ -237,7 +237,7 @@ async def run_reembed(args: argparse.Namespace) -> dict[str, Any]:
     n_sections = sum(len(d["sections"]) for d in docs)
 
     if not docs or n_sections == 0:
-        from app.library.bulk_migrate import write_sentinel as _ws
+        from app.cli.library.bulk_migrate import write_sentinel as _ws
 
         row_id = await _ws(
             db_url,

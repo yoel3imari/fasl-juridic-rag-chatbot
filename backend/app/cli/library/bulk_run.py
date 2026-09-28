@@ -1,6 +1,6 @@
 """Resumable end-to-end orchestration: embed + index primitives + run wrapper.
 
-Plan todo 16. ``python -m app.library.bulk embed|index|run`` iterates
+Plan todo 16. ``python -m app.cli.library.bulk embed|index|run`` iterates
 ledger artifacts, embeds + upserts in batches, updates statuses, prints
 progress/ETA, and resumes cleanly after a kill (per-file commits, finished
 work is never re-driven).
@@ -58,20 +58,20 @@ from typing import Any
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import app.models  # noqa: F401  (register ledger metadata)
-from app.library.artifacts import (
+from app.cli.library.artifacts import (
     artifact_path_for,
     read_artifact,
     read_verified_artifact,
     sha256_file,
     write_artifact,
 )
-from app.library.bulk_extract import (
+from app.cli.library.bulk_extract import (
     RETRIABLE_QUARANTINE_PREFIXES,
     ExtractJob,
     is_extract_eligible,
     run_job,
 )
-from app.library.bulk_state import set_chunk_status, set_file_stage_status
+from app.cli.library.bulk_state import set_chunk_status, set_file_stage_status
 from app.models.base import Base
 from app.repositories.library_import import LibraryImportRepository
 
@@ -207,13 +207,13 @@ def _make_store(qdrant_url: str | None, local_path: str | None, dim: int):
 
 def _served_estimate(text: str) -> int:
     """Seam over the todo-6 killer-input guard (tests inject a stub)."""
-    from app.library.quality_gate import served_estimate
+    from app.cli.library.quality_gate import served_estimate
 
     return served_estimate(text)
 
 
 def _served_safe_tokens() -> int:
-    from app.library.quality_gate import SERVED_SAFE_TOKENS
+    from app.cli.library.quality_gate import SERVED_SAFE_TOKENS
 
     return int(SERVED_SAFE_TOKENS)
 
@@ -622,8 +622,8 @@ def _engine(db_url: str):
 
 async def run_embed(args: argparse.Namespace) -> dict[str, Any]:
     """Execute ``bulk embed``: preflight -> ensure-extract -> embed."""
+    from app.cli.library.bulk_migrate import live_git_sha
     from app.config import settings
-    from app.library.bulk_migrate import live_git_sha
 
     model = settings.EMBEDDING_MODEL
     dim = int(settings.EMBEDDING_DIM)
@@ -685,8 +685,8 @@ async def run_embed(args: argparse.Namespace) -> dict[str, Any]:
 
 async def run_index(args: argparse.Namespace) -> dict[str, Any]:
     """Execute ``bulk index``: preflight -> ensure-extract -> ensure-embed -> index."""
+    from app.cli.library.bulk_migrate import live_git_sha
     from app.config import settings
-    from app.library.bulk_migrate import live_git_sha
 
     model = settings.EMBEDDING_MODEL
     dim = int(settings.EMBEDDING_DIM)
@@ -756,8 +756,8 @@ async def run_index(args: argparse.Namespace) -> dict[str, Any]:
 
 async def run_run(args: argparse.Namespace) -> dict[str, Any]:
     """Execute ``bulk run``: explicit embed-then-index wrapper over one scope."""
+    from app.cli.library.bulk_migrate import live_git_sha
     from app.config import settings
-    from app.library.bulk_migrate import live_git_sha
 
     model = settings.EMBEDDING_MODEL
     dim = int(settings.EMBEDDING_DIM)

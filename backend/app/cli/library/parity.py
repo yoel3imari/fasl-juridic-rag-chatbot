@@ -3,7 +3,7 @@
 Compares CrispEmbed-served ``granite-embedding-107m`` vectors against the
 pinned CPU-only HF reference (CLS pooling + L2 norm, see
 ``scripts/embedding_reference.py``) over the fixed 20-sentence set in
-``app.library.parity_sentences``. Asserts mean cosine >= 0.99 and writes
+``app.cli.library.parity_sentences``. Asserts mean cosine >= 0.99 and writes
 ``parity.json`` with ``{model, dim, git_sha, produced_at, n, mean_cosine,
 per_sample}``.
 
@@ -11,12 +11,12 @@ Sequential two-phase usage on this RAM-constrained host (never hold the
 served GGUF and the HF reference model in RAM at once)::
 
     # Phase A (granite service up): cache CrispEmbed vectors
-    cd backend && uv run python -m app.library.parity \\
+    cd backend && uv run python -m app.cli.library.parity \\
         --write-cache ../.omo/evidence/law-corpus-bulk-ingest/parity-crispembed.json
     # Phase B (service STOPPED): build the HF reference cache
     #   <ref-venv>/bin/python scripts/embedding_reference.py --out <ref.json>
     # Phase C (offline): score from the two caches
-    cd backend && uv run python -m app.library.parity \\
+    cd backend && uv run python -m app.cli.library.parity \\
         --crispembed-cache <crisp.json> --reference <ref.json> \\
         --out parity.json
 
@@ -39,7 +39,7 @@ import subprocess
 import sys
 import urllib.request
 
-from app.library.parity_sentences import PARITY_SENTENCES, PARITY_SENTENCES_SHA256
+from app.cli.library.parity_sentences import PARITY_SENTENCES, PARITY_SENTENCES_SHA256
 
 MODEL = "granite-embedding-107m"
 EXPECTED_DIM = 384
@@ -49,7 +49,9 @@ FAIL_EXIT = 2
 
 def _repo_root() -> str:
     here = os.path.dirname(os.path.abspath(__file__))
-    return os.path.dirname(os.path.dirname(os.path.dirname(here)))
+    return os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.dirname(here)))
+    )
 
 
 def _default_evidence_dir() -> str:

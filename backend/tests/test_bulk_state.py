@@ -12,8 +12,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import app.models  # noqa: F401  (register metadata)
-from app.library import bulk_state
-from app.library.bulk_state import (
+from app.cli.library import bulk_state
+from app.cli.library.bulk_state import (
     InvalidTransitionError,
     WriterBusyError,
     atomic_write_json,

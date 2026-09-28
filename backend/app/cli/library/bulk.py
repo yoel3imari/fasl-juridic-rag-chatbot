@@ -1,7 +1,7 @@
-"""Resumable bulk-ingest CLI: ``python -m app.library.bulk <subcommand>``.
+"""Resumable bulk-ingest CLI: ``python -m app.cli.library.bulk <subcommand>``.
 
 Extension-friendly dispatcher (plan todos 12/16 add ``extract``/``run`` ...
-here): each subcommand lives in its own ``app.library.bulk_*`` module and
+here): each subcommand lives in its own ``app.cli.library.bulk_*`` module and
 registers ONE entry below. Keep this file to parsing + dispatch only - no
 stage logic, so parallel todos never edit the same function body.
 
@@ -22,54 +22,54 @@ Handler = Callable[[argparse.Namespace], Awaitable[dict[str, Any]]]
 
 
 async def _run_catalog(args: argparse.Namespace) -> dict[str, Any]:
-    from app.library.bulk_catalog import run_catalog_from_args
+    from app.cli.library.bulk_catalog import run_catalog_from_args
 
     return await run_catalog_from_args(args)
 
 
 async def _run_extract(args: argparse.Namespace) -> dict[str, Any]:
-    from app.library.bulk_extract import run_extract_from_args
+    from app.cli.library.bulk_extract import run_extract_from_args
 
     return await run_extract_from_args(args)
 
 
 async def _run_embed(args: argparse.Namespace) -> dict[str, Any]:
-    from app.library.bulk_run import run_embed_from_args
+    from app.cli.library.bulk_run import run_embed_from_args
 
     return await run_embed_from_args(args)
 
 
 async def _run_index(args: argparse.Namespace) -> dict[str, Any]:
-    from app.library.bulk_run import run_index_from_args
+    from app.cli.library.bulk_run import run_index_from_args
 
     return await run_index_from_args(args)
 
 
 async def _run_run(args: argparse.Namespace) -> dict[str, Any]:
-    from app.library.bulk_run import run_run_from_args
+    from app.cli.library.bulk_run import run_run_from_args
 
     return await run_run_from_args(args)
 
 
 async def _run_reembed(args: argparse.Namespace) -> dict[str, Any]:
-    from app.library.bulk_reembed import run_reembed_from_args
+    from app.cli.library.bulk_reembed import run_reembed_from_args
 
     return await run_reembed_from_args(args)
 
 
 async def _run_migrate(args: argparse.Namespace) -> dict[str, Any]:
-    from app.library.bulk_migrate import run_migrate_from_args
+    from app.cli.library.bulk_migrate import run_migrate_from_args
 
     return await run_migrate_from_args(args)
 
 
 def _register(sub: Any) -> dict[str, Handler]:
     """Register one subparser per stage module. Later todos add lines here."""
-    from app.library.bulk_catalog import add_catalog_parser
-    from app.library.bulk_extract import add_extract_parser
-    from app.library.bulk_migrate import add_migrate_parser
-    from app.library.bulk_reembed import add_reembed_parser
-    from app.library.bulk_run import add_embed_parser, add_index_parser, add_run_parser
+    from app.cli.library.bulk_catalog import add_catalog_parser
+    from app.cli.library.bulk_extract import add_extract_parser
+    from app.cli.library.bulk_migrate import add_migrate_parser
+    from app.cli.library.bulk_reembed import add_reembed_parser
+    from app.cli.library.bulk_run import add_embed_parser, add_index_parser, add_run_parser
 
     handlers: dict[str, Handler] = {}
     add_catalog_parser(sub)

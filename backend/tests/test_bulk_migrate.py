@@ -14,7 +14,7 @@ import json
 
 import pytest
 
-from app.library.bulk_migrate import (
+from app.cli.library.bulk_migrate import (
     FAIL_EXIT,
     MigrationRefused,
     load_gate_artifact,

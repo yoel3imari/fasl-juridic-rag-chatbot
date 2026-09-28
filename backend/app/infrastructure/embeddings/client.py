@@ -207,7 +207,7 @@ class CrispEmbedClient:
         Uses the todo-7 ledger API (``set_chunk_status``); rows stay
         ``pending`` on failure -- success is never claimed on failure.
         """
-        from app.library.bulk_state import set_chunk_status
+        from app.cli.library.bulk_state import set_chunk_status
 
         if not texts:
             return []
@@ -229,7 +229,7 @@ class CrispEmbedClient:
     def embed_sync_with_ledger(
         self, texts: list[str], chunk_rows: Sequence[Any] | None = None
     ) -> list[list[float]]:
-        from app.library.bulk_state import set_chunk_status
+        from app.cli.library.bulk_state import set_chunk_status
 
         if not texts:
             return []

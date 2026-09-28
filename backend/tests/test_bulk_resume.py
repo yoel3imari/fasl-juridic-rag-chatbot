@@ -17,7 +17,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import app.models  # noqa: F401  (register metadata)
-from app.library.artifacts import (
+from app.cli.library.artifacts import (
     ArtifactIntegrityError,
     build_record,
     read_verified_artifact,
@@ -25,7 +25,7 @@ from app.library.artifacts import (
     verify_artifact,
     write_artifact,
 )
-from app.library.bulk_state import (
+from app.cli.library.bulk_state import (
     InvalidTransitionError,
     assert_stage_ready,
     export_manifest,
@@ -386,7 +386,7 @@ def test_post_dedup_limit_gates_only_downstream() -> None:
 
 def test_catalog_limit_keeps_same_winners_prefix(tmp_path: Path) -> None:
     # Given: a tiny source tree with distinct contents
-    from app.library.bulk_catalog import apply_limit, deduplicate, scan_file
+    from app.cli.library.bulk_catalog import apply_limit, deduplicate, scan_file
 
     src = tmp_path / "shortlist"
     for name in ("a.pdf", "b.pdf", "c.pdf"):
@@ -402,7 +402,7 @@ def test_catalog_limit_keeps_same_winners_prefix(tmp_path: Path) -> None:
 
 def test_extract_collect_jobs_limit_is_post_eligibility(tmp_path: Path) -> None:
     # Given: three eligible parsed rows in path order
-    from app.library.bulk_extract import _collect_jobs
+    from app.cli.library.bulk_extract import _collect_jobs
 
     rows = [
         _file(path=f"cat/{n}.pdf", parse_status="parsed", sha256=f"{i}" * 64)
@@ -453,8 +453,8 @@ async def _seed_cataloged_ledger(db_url: str, src: Path, names: list[str]) -> No
 
 async def test_kill_mid_run_then_resume_never_redoes_extract(tmp_path: Path) -> None:
     # Given: a tmp ledger with 3 catalogued tiny PDFs
-    from app.library.artifacts import artifact_path_for
-    from app.library.bulk_extract import run_extract
+    from app.cli.library.artifacts import artifact_path_for
+    from app.cli.library.bulk_extract import run_extract
 
     src = tmp_path / "shortlist"
     names = ["a.pdf", "b.pdf", "c.pdf"]
@@ -530,8 +530,8 @@ async def test_kill_mid_run_then_resume_never_redoes_extract(tmp_path: Path) -> 
 
 async def test_legacy_extracted_row_without_sha_is_redriven(tmp_path: Path) -> None:
     # Given: a pre-todo-13 extracted row (artifact on disk, sha NULL) + artifact
-    from app.library.artifacts import artifact_path_for
-    from app.library.bulk_extract import run_extract
+    from app.cli.library.artifacts import artifact_path_for
+    from app.cli.library.bulk_extract import run_extract
 
     src = tmp_path / "shortlist"
     _tiny_pdf(src / "a.pdf", "المادة 1: نص قانوني كاف للاستخراج.")

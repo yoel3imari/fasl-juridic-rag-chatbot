@@ -12,8 +12,8 @@ import httpx
 import pytest
 import respx
 
+from app.cli.library.bulk_state import set_chunk_status
 from app.infrastructure.embeddings import client as embedder_mod
-from app.library.bulk_state import set_chunk_status
 
 
 class _Chunk:

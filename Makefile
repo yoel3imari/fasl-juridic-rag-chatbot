@@ -54,15 +54,15 @@ clean:
 
 # Bulk law-corpus ingest (plan law-corpus-bulk-ingest): resumable staged CLI.
 # All three run from the repo root and delegate to the real backend CLI
-# (`python -m app.library.bulk <subcommand>`); pass LIMIT=20 for a subset.
+# (`python -m app.cli.library.bulk <subcommand>`); pass LIMIT=20 for a subset.
 bulk-catalog:
-	cd backend && uv run python -m app.library.bulk catalog $(if $(LIMIT),--limit $(LIMIT))
+	cd backend && uv run python -m app.cli.library.bulk catalog $(if $(LIMIT),--limit $(LIMIT))
 
 bulk-extract:
-	cd backend && uv run python -m app.library.bulk extract $(if $(LIMIT),--limit $(LIMIT))
+	cd backend && uv run python -m app.cli.library.bulk extract $(if $(LIMIT),--limit $(LIMIT))
 
 bulk-run:
-	cd backend && uv run python -m app.library.bulk run $(if $(LIMIT),--limit $(LIMIT))
+	cd backend && uv run python -m app.cli.library.bulk run $(if $(LIMIT),--limit $(LIMIT))
 
 # Ledger-vs-Qdrant reconciliation: SQLite file/chunk stage counts, derived
 # manifest entry count, live Qdrant points_count, and the served model/dim.

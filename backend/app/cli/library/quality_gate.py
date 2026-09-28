@@ -15,16 +15,16 @@ Two-phase, never-concurrent usage on this RAM-constrained host (only ONE
 GGUF in RAM at a time)::
 
     # Phase A (granite up on :8080): cache granite vectors
-    cd backend && uv run python -m app.library.quality_gate capture \\
+    cd backend && uv run python -m app.cli.library.quality_gate capture \\
         --model granite --out gate-granite.json
     # Choreography: stop granite, start bge
     #   docker compose stop crispembed
     #   docker compose up -d crispembed-bge   # wait for :8081/health
     # Phase B (bge up on :8081): cache bge vectors
-    cd backend && uv run python -m app.library.quality_gate capture \\
+    cd backend && uv run python -m app.cli.library.quality_gate capture \\
         --model bge --out gate-bge.json
     # Choreography: stop bge, restore granite, then score OFFLINE
-    cd backend && uv run python -m app.library.quality_gate score \\
+    cd backend && uv run python -m app.cli.library.quality_gate score \\
         --granite gate-granite.json --bge gate-bge.json \\
         --out quality_gate.json
 
@@ -89,7 +89,9 @@ def served_estimate(text: str) -> int:
 
 def _repo_root() -> str:
     here = os.path.dirname(os.path.abspath(__file__))
-    return os.path.dirname(os.path.dirname(os.path.dirname(here)))
+    return os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.dirname(here)))
+    )
 
 
 def _git_sha() -> str:
@@ -146,7 +148,7 @@ def _source_dir(explicit: str | None) -> str:
 
 def load_corpus_chunks(artifact_dir: str) -> list[dict]:
     """Read every chunk from every zstd artifact (streams per file)."""
-    from app.library.artifacts import read_artifact
+    from app.cli.library.artifacts import read_artifact
 
     chunks: list[dict] = []
     for path in sorted(glob.glob(os.path.join(artifact_dir, "*.jsonl.zst"))):

@@ -1,9 +1,9 @@
 """Resumable extraction to zstd JSONL artifacts with OCR fallback + quarantine.
 
 Contract (plan todo 12): reads catalogued rows from the T7 ledger, extracts
-via the pure :mod:`app.library.extract_worker` (PyMuPDF fast path + Tesseract
+via the pure :mod:`app.cli.library.extract_worker` (PyMuPDF fast path + Tesseract
 ``ara+fra`` page fallback), chunks with the T11 chunker, and streams records
-(:mod:`app.library.artifacts`) to ``<dir>/<file_sha>.jsonl.zst``.
+(:mod:`app.cli.library.artifacts`) to ``<dir>/<file_sha>.jsonl.zst``.
 
 * Extract-eligible: ``parsed`` rows plus name-quarantined winners (filename
   unparseable, content is real PDF; fallback provenance already in the row).
@@ -38,9 +38,9 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.config import settings
-from app.library.artifacts import artifact_path_for, sha256_file, write_artifact
-from app.library.bulk_state import single_writer
-from app.library.extract_worker import ExtractJob, ExtractResult, run_job
+from app.cli.library.artifacts import artifact_path_for, sha256_file, write_artifact
+from app.cli.library.bulk_state import single_writer
+from app.cli.library.extract_worker import ExtractJob, ExtractResult, run_job
 
 import app.models  # noqa: F401  (register ledger metadata)
 from app.models.base import Base
@@ -195,7 +195,7 @@ async def run_extract(
                         )
                 else:
                     results = [run_job(j) for _, j in jobs]
-                from app.library.bulk_state import set_file_stage_status
+                from app.cli.library.bulk_state import set_file_stage_status
 
                 for (file_id, _), res in zip(jobs, results):
                     row = await repo.get_file(file_id)

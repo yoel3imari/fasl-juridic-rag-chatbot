@@ -50,7 +50,7 @@ def src(tmp_path: Path) -> Path:
 
 
 def test_walk_sorted_is_posix_lexicographic(src: Path):
-    from app.library.bulk_catalog import walk_sorted
+    from app.cli.library.bulk_catalog import walk_sorted
 
     # Given: fixture files created in arbitrary order
     # When: walking the source dir
@@ -63,7 +63,7 @@ def test_walk_sorted_is_posix_lexicographic(src: Path):
 
 
 def test_dedup_first_sorted_path_wins(src: Path):
-    from app.library.bulk_catalog import deduplicate, scan_file, walk_sorted
+    from app.cli.library.bulk_catalog import deduplicate, scan_file, walk_sorted
 
     # Given: two files with identical bytes, "aaa" sorts before "zzz"
     scanned = [scan_file(src, rel) for rel in walk_sorted(src)]
@@ -78,7 +78,7 @@ def test_dedup_first_sorted_path_wins(src: Path):
 
 
 def test_limit_never_changes_dedup_winners(src: Path):
-    from app.library.bulk_catalog import (
+    from app.cli.library.bulk_catalog import (
         apply_limit,
         deduplicate,
         scan_file,
@@ -97,7 +97,7 @@ def test_limit_never_changes_dedup_winners(src: Path):
 
 
 def test_scan_file_records_unreadable_instead_of_raising(src: Path):
-    from app.library.bulk_catalog import scan_file
+    from app.cli.library.bulk_catalog import scan_file
 
     # Given: a corrupt PDF
     # When: scanning it
@@ -109,7 +109,7 @@ def test_scan_file_records_unreadable_instead_of_raising(src: Path):
 
 
 async def _run(src: Path, tmp_path: Path, **kw):
-    from app.library.bulk_catalog import run_catalog
+    from app.cli.library.bulk_catalog import run_catalog
 
     db = tmp_path / kw.pop("db_name", "cat.db")
     manifest = tmp_path / "library-manifest.json"
@@ -181,7 +181,7 @@ async def test_run_catalog_limit_gates_writes_not_winners(src: Path, tmp_path: P
 
 
 def test_bulk_cli_dispatches_catalog(src: Path, tmp_path: Path, monkeypatch):
-    import app.library.bulk as bulk
+    import app.cli.library.bulk as bulk
 
     # Given: the catalog entry point wired through the dispatcher
     out: dict = {}

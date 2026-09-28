@@ -19,8 +19,8 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
+from app.cli.library.artifacts import build_record
 from app.infrastructure.authority.extractor import Chunk
-from app.library.artifacts import build_record
 from app.services.library_seed import chunk_id as make_chunk_id
 
 _OCR_LANGS = "ara+fra"

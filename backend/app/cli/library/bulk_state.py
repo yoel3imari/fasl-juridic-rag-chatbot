@@ -34,7 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.library_import import LibraryImportFile
 from app.repositories.library_import import LibraryImportRepository
 
-BACKEND_DIR = Path(__file__).resolve().parents[2]
+BACKEND_DIR = Path(__file__).resolve().parents[3]
 DEFAULT_MANIFEST = BACKEND_DIR / "data" / "library-manifest.json"
 DEFAULT_SEED_STATE = BACKEND_DIR / "data" / "library-seed-state.json"
 DEFAULT_WRITER_LOCK = BACKEND_DIR / "data" / ".library-writer.lock"

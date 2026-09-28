@@ -37,7 +37,7 @@ def _sentences() -> tuple[tuple[str, ...], str]:
     backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if backend_dir not in sys.path:
         sys.path.insert(0, backend_dir)
-    from app.library.parity_sentences import (  # noqa: E402
+    from app.cli.library.parity_sentences import (  # noqa: E402
         PARITY_SENTENCES,
         PARITY_SENTENCES_SHA256,
     )

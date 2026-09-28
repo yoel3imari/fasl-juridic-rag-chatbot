@@ -3,7 +3,7 @@
 SQLite is the SOURCE OF TRUTH for bulk-ingest state. The JSON files under
 ``backend/data/`` (``library-manifest.json`` / ``library-seed-state.json``)
 are DERIVED artifacts regenerated only via
-:func:`app.library.bulk_state.export_manifest`.
+:func:`app.cli.library.bulk_state.export_manifest`.
 """
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 """Fixed parity sentence set (plan todo 5).
 
-Single source of truth: both the CrispEmbed side (``app.library.parity``)
+Single source of truth: both the CrispEmbed side (``app.cli.library.parity``)
 and the HF reference side (``scripts/embedding_reference.py``) import this
 module, so both sides embed byte-identical strings. Do not duplicate this
 list anywhere else.

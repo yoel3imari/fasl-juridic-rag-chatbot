@@ -8,15 +8,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from app.library.artifacts import (
+from app.cli.library.artifacts import (
     RECORD_FIELDS,
     artifact_path_for,
     build_record,
     read_artifact,
     write_artifact,
 )
-from app.library.bulk_extract import is_extract_eligible
-from app.library.extract_worker import needs_ocr, split_pages_fallback
+from app.cli.library.bulk_extract import is_extract_eligible
+from app.cli.library.extract_worker import needs_ocr, split_pages_fallback
 
 
 def test_needs_ocr_below_min_chars() -> None:

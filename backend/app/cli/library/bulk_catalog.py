@@ -35,8 +35,8 @@ from typing import Any
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.config import settings
-from app.library import bulk_state
-from app.library.bulk_state import export_manifest, set_file_stage_status, single_writer
+from app.cli.library import bulk_state
+from app.cli.library.bulk_state import export_manifest, set_file_stage_status, single_writer
 from app.infrastructure.authority.catalog import parse_filename
 
 import app.models  # noqa: F401  (register ledger metadata)

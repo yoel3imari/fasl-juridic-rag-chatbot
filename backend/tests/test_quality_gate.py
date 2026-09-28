@@ -12,7 +12,7 @@ import json
 
 import pytest
 
-from app.library import quality_gate as qg
+from app.cli.library import quality_gate as qg
 
 
 def test_length_class_boundaries() -> None:
