@@ -16,6 +16,12 @@ citations_json. Unknown draft_type → 400; matter without analysis → 422
 → 409. The template path makes zero provider calls; polish=True routes
 through app.domain.privacy.check_privacy BEFORE any provider call (strict + external
 + matter evidence → 403).
+
+Prefix note: this module exposes two routers because one APIRouter prefix
+cannot serve both families: `matters_router` (prefix /api/v1/matters) hosts
+POST /{matter_id}/drafts, while `drafts_router` (prefix /api/v1/drafts)
+hosts the three /{draft_id}/... transitions. Served paths are unchanged
+from the previous single unprefixed router.
 """
 
 from __future__ import annotations
@@ -49,7 +55,8 @@ from app.models.base import get_db
 from app.models.draft import Draft, ReviewState
 from app.repositories.draft import DraftRepository
 
-router = APIRouter(tags=["drafts"])
+matters_router = APIRouter(prefix="/api/v1/matters", tags=["drafts"])
+drafts_router = APIRouter(prefix="/api/v1/drafts", tags=["drafts"])
 
 
 def _to_out(
@@ -95,8 +102,8 @@ async def _polish_text(text: str, resolved: ResolvedLlmSettings) -> tuple[str, b
         return text, False
 
 
-@router.post(
-    "/api/v1/matters/{matter_id}/drafts",
+@matters_router.post(
+    "/{matter_id}/drafts",
     response_model=DraftOut,
     status_code=status.HTTP_201_CREATED,
 )
@@ -218,7 +225,7 @@ async def _apply_transition(
     return _to_out(row, row.content, citations, False)
 
 
-@router.post("/api/v1/drafts/{draft_id}/acknowledge", response_model=DraftOut)
+@drafts_router.post("/{draft_id}/acknowledge", response_model=DraftOut)
 async def acknowledge_draft(
     draft_id: int, session: Annotated[AsyncSession, Depends(get_db)]
 ) -> DraftOut:
@@ -228,7 +235,7 @@ async def acknowledge_draft(
     )
 
 
-@router.post("/api/v1/drafts/{draft_id}/lawyer_review", response_model=DraftOut)
+@drafts_router.post("/{draft_id}/lawyer_review", response_model=DraftOut)
 async def lawyer_review_draft(
     draft_id: int,
     body: LawyerReviewIn,
@@ -242,7 +249,7 @@ async def lawyer_review_draft(
     )
 
 
-@router.post("/api/v1/drafts/{draft_id}/transition", response_model=DraftOut)
+@drafts_router.post("/{draft_id}/transition", response_model=DraftOut)
 async def transition_draft(
     draft_id: int,
     body: TransitionIn,
