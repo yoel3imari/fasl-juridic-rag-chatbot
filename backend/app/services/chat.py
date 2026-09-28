@@ -7,8 +7,8 @@ rerank → build_citations → assemble_prompt path in the chat route.
 
 Design note (pydantic-ai 2.43.0): native tools (``Agent(tools=[...])`` /
 ``@agent.tool_plain``) ARE available and ARE registered by
-``register_retrieval_tools`` / ``get_agent_with_tools``. The chat route
-nevertheless drives a manual JSON tool-call envelope loop instead of
+``register_retrieval_tools`` / ``get_agent_with_tools``. ``run_envelope_loop``
+drives a manual JSON tool-call envelope loop instead of
 native auto-execution, because the SSE contract requires citations
 BEFORE tokens, citation assembly needs Python-side rerank/MMR
 (``rerank`` + ``mmr_select`` + ``build_citations``), and the privacy
@@ -23,10 +23,12 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 from app.infrastructure.llm import agent as agent_mod
+from app.infrastructure.llm.errors import ProviderUnreachableError
 from app.services import search as svc
 
 MAX_TOOL_ROUNDS: int = 3
@@ -160,12 +162,82 @@ async def execute_tool_call(
     raise ValueError(f"unknown retrieval tool: {tool}")
 
 
+async def collect_text(agent: Any, prompt: str) -> str:
+    """Run one agent round and collect its full text (decision rounds stay silent)."""
+    parts: list[str] = []
+    async with agent.run_stream(prompt) as result:
+        async for chunk in result.stream_text(delta=True):
+            parts.append(chunk)
+    return "".join(parts)
+
+
+@dataclass
+class EnvelopeOutcome:
+    """Result of the bounded ReAct envelope loop for one chat request."""
+
+    matter_raw: list[dict[str, Any]]
+    auth_raw: list[dict[str, Any]]
+    direct_text: str | None
+    tool_rounds: int
+    provider_error: str | None
+
+
+async def run_envelope_loop(
+    *,
+    query: str,
+    agent: Any,
+    ctx: ToolContext,
+    provider: str,
+    privacy_check: Callable[..., None],
+) -> EnvelopeOutcome:
+    """Drive the bounded ReAct tool loop (max 3 tool rounds).
+
+    The LLM either answers directly (no envelope → zero retrieval) or
+    emits a JSON tool-call envelope per round. Decision rounds are
+    collected silently; provider failures degrade into ``provider_error``
+    instead of raising. ``privacy_check`` runs before every decision
+    round (privacy first, always).
+    """
+    matter_raw: list[dict[str, Any]] = []
+    auth_raw: list[dict[str, Any]] = []
+    direct_text: str | None = None
+    tool_rounds = 0
+    provider_error: str | None = None
+    prior_summary: str | None = None
+    for _ in range(MAX_TOOL_ROUNDS):
+        decision_prompt = build_decision_prompt(query, prior_summary=prior_summary)
+        privacy_check(decision_prompt, has_matter_evidence=bool(matter_raw))
+        try:
+            text = await collect_text(agent, decision_prompt)
+        except Exception as exc:  # provider down mid-loop: degrade, never crash
+            provider_error = str(
+                ProviderUnreachableError(provider=provider, reason=str(exc))
+            )
+            break
+        call = parse_tool_call(text)
+        if call is None:
+            direct_text = text
+            break
+        m_new, a_new = await execute_tool_call(ctx, call["tool"], call["query"])
+        tool_rounds += 1
+        matter_raw.extend(m_new)
+        auth_raw.extend(a_new)
+        prior_summary = summarize_hits(matter_raw, auth_raw)
+    return EnvelopeOutcome(
+        matter_raw=matter_raw,
+        auth_raw=auth_raw,
+        direct_text=direct_text,
+        tool_rounds=tool_rounds,
+        provider_error=provider_error,
+    )
+
+
 def register_retrieval_tools(agent: Any, ctx: ToolContext) -> bool:
     """Register retrieval tools on a real pydantic-ai agent.
 
     Returns True when registration happened, False for test doubles
-    (e.g. _FakeAgent) that lack the ``tool_plain`` decorator — the chat
-    route's manual envelope loop covers those via ``execute_tool_call``.
+    (e.g. _FakeAgent) that lack the ``tool_plain`` decorator —
+    ``run_envelope_loop`` covers those via ``execute_tool_call``.
     Each closure keeps the matter_id pre-filter bound, so isolation holds
     even for native tool calls.
     """
@@ -227,8 +299,8 @@ def get_agent_with_tools(
 
     Wraps get_agent, then registers search_matter_tool /
     search_authority_tool / search_both_tool (matter_id pre-filter bound)
-    via register_retrieval_tools. See the module docstring for why the
-    chat route still drives a manual envelope loop around these tools.
+    via register_retrieval_tools. See the module docstring for why
+    ``run_envelope_loop`` drives a manual envelope loop around these tools.
     """
     agent = agent_mod.get_agent(provider=provider, model=model)
     register_retrieval_tools(
