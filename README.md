@@ -167,14 +167,16 @@ make clean
 
 ```text
 backend/                  # FastAPI app (moroccan-legal-rag-backend)
-  app/api/v1/             # matters, documents, search, chat, analysis, drafts, library
-  app/ingestion/          # extract, ocr, sections, classifier, pipeline, indexer
-  app/search/             # store, sparse, service, schemas
-  app/rag/                # assemble, rerank
-  app/library/            # seeder, extractor, manifest, embedder
-  app/llm/                # privacy guard, agent
-  app/analysis/           # engine, glossary
-  app/models/             # SQLAlchemy models
+  app/                    # layered packages (a layer may import only layers below it)
+    api/v1/               # HTTP routers: chat, search, library, conversations, drafts, documents, matters, settings, analysis
+    cli/library/          # bulk CLI bounded context (python -m app.cli.library.bulk)
+    services/             # orchestration: chat, search, ingestion, library_seed, library_coverage
+    infrastructure/       # external clients: qdrant, llm, embeddings, ocr, rerank + authority/ingestion adapters
+    repositories/         # SQL queries per aggregate: matter, document, conversation, analysis, draft, settings, library_import
+    models/               # SQLAlchemy models (unchanged schema)
+    domain/               # pure rules (no framework/SDK imports): analysis, authority, ingestion, search + citations/privacy/prompts/rerank/drafts
+    schemas/              # pydantic request/response models, one module per router + provider catalog
+    config/               # Settings (single env source), resolver, BACKEND_ROOT anchor
   alembic/                # migrations
   tests/                  # per-domain suites
 frontend/                 # Next.js app (moroccan-legal-rag-frontend)
@@ -191,3 +193,24 @@ docker-compose.prod.yml   # prod overlay
 .env.example / .env
 Makefile                  # dev, dev-local, up, down, logs, test, build, clean
 ```
+
+### Backend layer rules (enforced by `uv run lint-imports` from `backend/`)
+
+Each layer may import only the layers below it, top to bottom:
+`api > cli > services > infrastructure > repositories > models > domain`.
+
+- `cli` sits directly under `api`: the bulk CLI may import everything except `api`.
+- `domain` is bottom and pure: no `fastapi`, `sqlalchemy`, `pydantic`, provider SDKs, or document/OCR libraries (forbidden contract; `ruff` TID251 additionally bans relative imports climbing past the parent package).
+- `schemas/` (transport models) and `config/` (settings) sit outside the layer order.
+- One contracted exception: `infrastructure.embeddings.client -> cli.library.bulk_state`, a function-local deferred ledger write during bulk runs.
+
+### Bulk CLI entrypoint
+
+```bash
+cd backend && uv run python -m app.cli.library.bulk {catalog,extract,migrate,reembed-matter,embed,index,run}
+# or from the repo root: make bulk-catalog | bulk-extract | bulk-run | bulk-status
+```
+
+### Chat paths
+
+`POST /api/v1/chat` (SSE: `citations`, then `token`, then `done`) is the supported path. The WebSocket `/api/v1/chat/stream` handler in `app/api/v1/chat.py` is legacy: the frontend does not use it.
