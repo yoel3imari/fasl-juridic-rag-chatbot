@@ -4,6 +4,12 @@ Accepts JSON {matter_id, conversation_id?, content, consent?, system?},
 runs the matter-privacy check first, then streams assistant tokens.
 Every failure is a structured {"type": "error", ...} frame; the socket
 never crashes unhandled.
+
+LEGACY — the WebSocket chat_stream handler below is not used by the
+frontend and is not covered by the SSE contract test
+(tests/test_chat_contract.py pins chat_rag, POST /api/v1/chat, which is
+the supported path). It has no retrieval, no citations, and no
+conversation persistence; only tests/test_privacy.py exercises it.
 """
 
 from __future__ import annotations
@@ -421,6 +427,9 @@ async def chat_rag(
     )
 
 
+# LEGACY — not used by the frontend, not covered by the SSE contract test
+# (chat_rag, POST /api/v1/chat, is the supported path); no retrieval, no
+# citations, no conversation persistence; only tests/test_privacy.py covers it.
 @router.websocket("/stream")
 async def chat_stream(ws: WebSocket) -> None:
     """Privacy-checked streaming chat over a persistent socket."""
