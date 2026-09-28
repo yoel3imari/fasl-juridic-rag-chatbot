@@ -23,13 +23,6 @@ _RANKER: Any | None = None
 _RANKER_FAILED: bool = False
 
 
-def reset_ranker() -> None:
-    """Test seam: drop the cached ranker / failure flag."""
-    global _RANKER, _RANKER_FAILED
-    _RANKER = None
-    _RANKER_FAILED = False
-
-
 def get_ranker() -> Any | None:
     """Build (once) the FlashRank ranker; None on ANY failure (honest fallback).
 

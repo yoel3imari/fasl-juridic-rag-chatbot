@@ -12,7 +12,7 @@ sequences the calls, runs the pure rule, and owns the transaction.
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,9 +24,6 @@ from app.repositories.analysis import AnalysisRepository
 from app.schemas.analysis import ANALYSIS_KIND, AnalysisIn, AnalysisOut
 
 router = APIRouter(prefix="/api/v1/matters", tags=["analysis"])
-
-Risk = Literal["High", "Medium", "Low"]
-
 
 @router.post("/{matter_id}/analysis", response_model=AnalysisOut)
 async def create_analysis(

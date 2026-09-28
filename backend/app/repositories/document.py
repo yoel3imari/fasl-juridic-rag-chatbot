@@ -55,26 +55,6 @@ class DocumentRepository:
         )
         return list(result.scalars().all())
 
-    async def update_status(
-        self, document_id: int, matter_id: int, status: str
-    ) -> Document | None:
-        doc = await self.get(document_id, matter_id)
-        if doc is None:
-            return None
-        doc.status = status
-        await self.session.flush()
-        return doc
-
-    async def update_chunk_count(
-        self, document_id: int, matter_id: int, chunk_count: int
-    ) -> Document | None:
-        doc = await self.get(document_id, matter_id)
-        if doc is None:
-            return None
-        doc.chunk_count = chunk_count
-        await self.session.flush()
-        return doc
-
     async def delete(self, document_id: int, matter_id: int) -> bool:
         doc = await self.get(document_id, matter_id)
         if doc is None:

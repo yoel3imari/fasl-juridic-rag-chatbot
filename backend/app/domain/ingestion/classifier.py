@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from typing import Final
 
-DocType: Final = str
-
 _SIGNALS: Final[tuple[tuple[str, tuple[tuple[str, int], ...]], ...]] = (
     (
         "contract",

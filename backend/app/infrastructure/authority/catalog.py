@@ -30,7 +30,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from app.infrastructure.authority.manifest import EditionType, ManifestEntry
+from app.infrastructure.authority.manifest import EditionType
 
 AR_GENERAL = EditionType.AR_GENERAL.value
 FR_TRANSLATION = EditionType.FR_TRANSLATION.value
@@ -219,19 +219,6 @@ class ParsedFile:
     edition: str
     quarantined: bool
     quarantine_reason: str | None = None
-
-    def to_manifest_entry(self, file_path: str) -> ManifestEntry:
-        return ManifestEntry(
-            source=self.source,
-            version=self.version,
-            edition=EditionType(self.edition),
-            file_path=file_path,
-            pub_date=self.gregorian_date,
-            doc_date=self.gregorian_date,
-            hijri_date=self.hijri_date,
-            language=self.language,
-        )
-
 
 def parse_filename(filename: str, folder: str) -> ParsedFile:
     """Parse provenance from a shortlist filename + its shortlist folder.

@@ -225,25 +225,3 @@ class CrispEmbedClient:
                         set_chunk_status(row, "embedded")
                 out.extend(vecs)
         return out
-
-    def embed_sync_with_ledger(
-        self, texts: list[str], chunk_rows: Sequence[Any] | None = None
-    ) -> list[list[float]]:
-        from app.cli.library.bulk_state import set_chunk_status
-
-        if not texts:
-            return []
-        rows = list(chunk_rows) if chunk_rows is not None else None
-        if rows is not None and len(rows) != len(texts):
-            raise ValueError(f"{len(rows)} chunk rows for {len(texts)} texts")
-        out: list[list[float]] = []
-        spans = split_batches(texts, max_texts=self._batch_texts)
-        with httpx.Client(timeout=self._timeout) as client:
-            for start, end in spans:
-                batch = [sanitize_request_text(t) for t in texts[start:end]]
-                vecs = self._post_one_sync(client, batch)
-                if rows is not None:
-                    for row in rows[start:end]:
-                        set_chunk_status(row, "embedded")
-                out.extend(vecs)
-        return out

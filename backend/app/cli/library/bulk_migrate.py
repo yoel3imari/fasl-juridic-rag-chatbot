@@ -37,9 +37,6 @@ logger = logging.getLogger(__name__)
 
 FAIL_EXIT = 2
 
-WINNER_MODEL = "granite-embedding-107m"
-WINNER_DIM = 384
-
 EVIDENCE_COLLECTION = "matter_evidence"
 AUTHORITY_COLLECTION = "legal_authorities"
 COLLECTIONS = (EVIDENCE_COLLECTION, AUTHORITY_COLLECTION)
@@ -455,9 +452,8 @@ async def run_migrate(args: argparse.Namespace) -> dict:
 
     client = _client_for(qdrant_url)
     try:
-        post_recreate = {
-            name: recreate_collection(client, name, dim) for name in COLLECTIONS
-        }
+        for name in COLLECTIONS:
+            recreate_collection(client, name, dim)
         indexes = ensure_authority_indexes(client)
         post = {name: collection_state(client, name) for name in COLLECTIONS}
     finally:

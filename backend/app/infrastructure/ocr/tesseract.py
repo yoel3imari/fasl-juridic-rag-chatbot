@@ -42,15 +42,6 @@ def ocr_timeout_seconds() -> float:
     return float(settings.OCR_TIMEOUT_SECONDS)
 
 
-async def ocr_page_image(image_bytes: bytes, *, page_no: int) -> OcrResult:
-    """Async seam used by the pipeline and tests; runs tesseract off the event loop."""
-    from anyio import to_thread
-
-    return await to_thread.run_sync(
-        lambda: ocr_page_image_sync(image_bytes, page_no=page_no)
-    )
-
-
 def ocr_page_image_sync(image_bytes: bytes, *, page_no: int) -> OcrResult:
     """Run tesseract on PNG bytes; raise OcrUnavailableError when OCR cannot run."""
     from app.domain.ingestion.errors import OcrUnavailableError

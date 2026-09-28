@@ -55,11 +55,3 @@ class AuthorityPayload(TypedDict):
     file_sha: NotRequired[str]
     hijri_date: NotRequired[str | None]
     coverage_note: NotRequired[str | None]
-
-
-class AuthorityPoint(AuthorityPayload):
-    """One indexed authority chunk: dense vector + search text + payload."""
-
-    id: str
-    vector: list[float]
-    text: str

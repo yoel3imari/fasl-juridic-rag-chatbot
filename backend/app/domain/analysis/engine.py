@@ -43,11 +43,9 @@ contradictions are retained side by side, never merged.
 from __future__ import annotations
 
 import re
-from typing import Any, Literal
+from typing import Any
 
 from app.domain.analysis.glossary import match_terms
-
-Risk = Literal["High", "Medium", "Low"]
 
 # Heuristic patterns (English + French keyword roots common in matter files).
 # Case-insensitive: the ingestion pipeline lowercases normalized_text

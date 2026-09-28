@@ -29,11 +29,9 @@ Response shape (contract for the task-10 frontend; field names stable):
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
-
-DraftType = Literal["opinion", "client_email", "demand_letter", "memo"]
 
 
 class DraftCreateIn(BaseModel):

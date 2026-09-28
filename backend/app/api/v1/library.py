@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 
 from app.config import settings
-from app.schemas.library import CoverageEntry, LibraryUploadOut
+from app.schemas.library import LibraryUploadOut
 from app.services import library_coverage
 
 router = APIRouter(prefix="/api/v1/library", tags=["library"])

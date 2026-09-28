@@ -58,9 +58,6 @@ FILE_STAGE_VALUES = {
 CHUNK_STATUS_VALUES = frozenset({"pending", "embedded", "indexed", "failed"})
 CHUNK_DONE = "indexed"
 
-# Pipeline order for the file-level stage machine:
-# catalogued -> extracted -> embedded -> indexed (todo 13 resume semantics).
-STAGE_ORDER = ("extract_status", "embed_status", "index_status")
 STAGE_UPSTREAM: dict[str, tuple[str, ...]] = {
     "extract_status": (),
     "embed_status": ("extract_status",),
