@@ -46,13 +46,18 @@ export default function Home() {
     setConversationId(null);
   };
 
-  const handleSelectConversation = (convId: number, targetMatterId: number) => {
+  const handleSelectConversation = (convId: number, targetMatterId: number | null) => {
     setMatterId(targetMatterId);
     setConversationId(convId);
   };
 
   const handleMatterCreated = (created: Matter) => {
     setMatterId(created.id);
+    setConversationId(null);
+  };
+
+  const handleMatterDeleted = (_deletedId: number) => {
+    setMatterId(null);
     setConversationId(null);
   };
 
@@ -70,6 +75,7 @@ export default function Home() {
         onSelect={handleSelectMatter}
         onOpenNewMatterModal={() => setNewMatterModalOpen(true)}
         onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+        onMatterDeleted={handleMatterDeleted}
       />
 
       {/* Main 2-Sided Split Workspace */}

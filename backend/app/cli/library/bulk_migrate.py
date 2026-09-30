@@ -11,6 +11,10 @@ sparse ``lexical``), creates the authority payload indexes, and writes a
 their server-side snapshots and asserts counts return to pre-migration
 values. Rollback is restorative: it does not require the gate.
 
+Collections absent from Qdrant skip the snapshot (nothing to lose) and are
+created at the winner dim; the manifest records them under ``cold_start``
+and rollback refuses them (nothing to restore).
+
 Exit codes: 0 on success, 2 (``FAIL_EXIT``) on any refusal or failure.
 No delete ever happens after a failed/missing gate or snapshot export.
 """
@@ -57,9 +61,7 @@ class MigrationRefused(Exception):
 
 def _repo_root() -> str:
     here = os.path.dirname(os.path.abspath(__file__))
-    return os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.dirname(here)))
-    )
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(here))))
 
 
 def live_git_sha() -> str:
@@ -124,17 +126,13 @@ def preflight(
         )
     mean_cosine = parity.get("mean_cosine")
     if not isinstance(mean_cosine, (int, float)) or mean_cosine < MIN_PARITY_COSINE:
-        problems.append(
-            f"parity mean_cosine={mean_cosine!r} < {MIN_PARITY_COSINE} (refusing)"
-        )
+        problems.append(f"parity mean_cosine={mean_cosine!r} < {MIN_PARITY_COSINE} (refusing)")
     if parity.get("model") != model:
         problems.append(f"parity model={parity.get('model')!r} != live {model!r}")
     if parity.get("dim") != dim:
         problems.append(f"parity dim={parity.get('dim')!r} != live {dim!r}")
     if parity.get("git_sha") != sha:
-        problems.append(
-            f"parity git_sha={parity.get('git_sha')!r} != live HEAD {sha!r} (stale)"
-        )
+        problems.append(f"parity git_sha={parity.get('git_sha')!r} != live HEAD {sha!r} (stale)")
     if problems:
         raise MigrationRefused("; ".join(problems))
     return {
@@ -155,8 +153,28 @@ def _client_for(url: str):
 
 
 def collection_state(client: Any, name: str) -> dict:
-    """Read live collection config via API (assertions use reads, not log prose)."""
-    info = client.get_collection(name)
+    """Read live collection config via API (assertions use reads, not log prose).
+
+    A missing collection is a state, not an error: cold-start Qdrant (fresh
+    volume, no collections yet) returns ``exists: False`` with empty config
+    so ``run_migrate`` can create instead of crashing before its own logic.
+    Any non-404 failure still raises.
+    """
+    try:
+        info = client.get_collection(name)
+    except Exception as exc:
+        if getattr(exc, "status_code", None) != 404:
+            raise
+        return {
+            "name": name,
+            "exists": False,
+            "dense_dim": None,
+            "dense_distance": None,
+            "sparse": [],
+            "on_disk_payload": None,
+            "payload_indexes": [],
+            "points_count": 0,
+        }
     vectors = info.config.params.vectors
     if isinstance(vectors, dict):
         dense = vectors["dense"]
@@ -182,9 +200,7 @@ def collection_state(client: Any, name: str) -> dict:
     }
 
 
-def snapshot_one(
-    client: Any, base_url: str, name: str, dest_dir: str, pre_count: int
-) -> dict:
+def snapshot_one(client: Any, base_url: str, name: str, dest_dir: str, pre_count: int) -> dict:
     """Create + poll + API-download one snapshot; assert non-zero BEFORE return.
 
     Raises MigrationRefused/RuntimeError on any export failure so the caller
@@ -226,9 +242,7 @@ def snapshot_one(
     except Exception as exc:
         raise MigrationRefused(f"snapshot download failed for {name}: {exc}")
     if size == 0 or not os.path.exists(dest):
-        raise MigrationRefused(
-            f"snapshot download empty/missing for {name} (size={size})"
-        )
+        raise MigrationRefused(f"snapshot download empty/missing for {name} (size={size})")
     return {
         "collection": name,
         "snapshot_name": snap_name,
@@ -271,8 +285,7 @@ def backup_sqlite(src: str, dest_dir: str) -> dict:
         raise MigrationRefused(f"cannot probe live DB {src!r}: {exc}")
     if not ledger_ok:
         raise MigrationRefused(
-            f"{src!r} lacks alembic_version/library_import_runs "
-            f"(not the live ledger DB; refusing)"
+            f"{src!r} lacks alembic_version/library_import_runs (not the live ledger DB; refusing)"
         )
     os.makedirs(dest_dir, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -291,8 +304,8 @@ def backup_sqlite(src: str, dest_dir: str) -> dict:
     }
 
 
-def recreate_collection(client: Any, name: str, dim: int) -> dict:
-    """Delete + recreate one collection at ``dim`` (mirrors live HNSW/optimizer)."""
+def _create_collection(client: Any, name: str, dim: int) -> dict:
+    """Create one collection at ``dim`` and verify dim + lexical; return state."""
     from qdrant_client.models import (
         Distance,
         HnswConfigDiff,
@@ -301,7 +314,6 @@ def recreate_collection(client: Any, name: str, dim: int) -> dict:
         VectorParams,
     )
 
-    client.delete_collection(name)
     client.create_collection(
         collection_name=name,
         vectors_config={"dense": VectorParams(size=dim, distance=Distance.COSINE)},
@@ -312,12 +324,16 @@ def recreate_collection(client: Any, name: str, dim: int) -> dict:
     )
     state = collection_state(client, name)
     if state["dense_dim"] != dim:
-        raise RuntimeError(
-            f"recreate verification failed for {name}: dim={state['dense_dim']!r}"
-        )
+        raise RuntimeError(f"create verification failed for {name}: dim={state['dense_dim']!r}")
     if SPARSE_NAME not in state["sparse"]:
-        raise RuntimeError(f"recreate verification failed for {name}: no lexical")
+        raise RuntimeError(f"create verification failed for {name}: no lexical")
     return state
+
+
+def recreate_collection(client: Any, name: str, dim: int) -> dict:
+    """Delete + recreate one collection at ``dim`` (mirrors live HNSW/optimizer)."""
+    client.delete_collection(name)
+    return _create_collection(client, name, dim)
 
 
 def ensure_authority_indexes(client: Any) -> list[str]:
@@ -332,9 +348,7 @@ def ensure_authority_indexes(client: Any) -> list[str]:
             wait=True,
         )
     state = collection_state(client, AUTHORITY_COLLECTION)
-    missing = [
-        f for f in AUTHORITY_PAYLOAD_INDEXES if f not in state["payload_indexes"]
-    ]
+    missing = [f for f in AUTHORITY_PAYLOAD_INDEXES if f not in state["payload_indexes"]]
     if missing:
         raise RuntimeError(f"payload indexes missing after create: {missing}")
     return state["payload_indexes"]
@@ -404,9 +418,10 @@ async def run_migrate(args: argparse.Namespace) -> dict:
         pre = {name: collection_state(client, name) for name in COLLECTIONS}
     finally:
         client.close()
+    missing = [n for n in COLLECTIONS if not pre[n]["exists"]]
 
     # Fast path: winner dim already live -> verify only, no data loss.
-    if all(pre[name]["dense_dim"] == dim for name in COLLECTIONS):
+    if not missing and all(pre[name]["dense_dim"] == dim for name in COLLECTIONS):
         client = _client_for(qdrant_url)
         try:
             indexes = ensure_authority_indexes(client)
@@ -437,23 +452,44 @@ async def run_migrate(args: argparse.Namespace) -> dict:
         }
 
     # Destructive path: snapshot-download + sha256 BEFORE any delete.
+    # Cold-start collections (absent from Qdrant) hold nothing to lose:
+    # they skip the snapshot and are created at the winner dim.
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     run_dir = os.path.join(snapshot_dir, f"migrate-{stamp}")
-    client = _client_for(qdrant_url)
-    try:
-        snapshots = [
-            snapshot_one(client, qdrant_url, name, run_dir, pre[name]["points_count"])
-            for name in COLLECTIONS
-        ]
-    finally:
-        client.close()
+    present = [n for n in COLLECTIONS if n not in missing]
+    snap_taken: dict[str, dict] = {}
+    if present:
+        client = _client_for(qdrant_url)
+        try:
+            for name in present:
+                snap_taken[name] = snapshot_one(
+                    client, qdrant_url, name, run_dir, pre[name]["points_count"]
+                )
+        finally:
+            client.close()
+    snapshots = [
+        snap_taken.get(
+            name,
+            {
+                "collection": name,
+                "snapshot_name": None,
+                "reason": "collection-absent-at-migrate",
+                "pre_count": 0,
+                "bytes": 0,
+            },
+        )
+        for name in COLLECTIONS
+    ]
 
     backup = backup_sqlite(resolve_sqlite_path(db_url), run_dir)
 
     client = _client_for(qdrant_url)
     try:
         for name in COLLECTIONS:
-            recreate_collection(client, name, dim)
+            if name in missing:
+                _create_collection(client, name, dim)
+            else:
+                recreate_collection(client, name, dim)
         indexes = ensure_authority_indexes(client)
         post = {name: collection_state(client, name) for name in COLLECTIONS}
     finally:
@@ -466,6 +502,7 @@ async def run_migrate(args: argparse.Namespace) -> dict:
         "git_sha": sha,
         "produced_at": _now(),
         "qdrant_url": qdrant_url,
+        "cold_start": missing,
         "snapshots": snapshots,
         "sqlite_backup": backup,
         "pre_counts": {n: pre[n]["points_count"] for n in COLLECTIONS},
@@ -488,6 +525,7 @@ async def run_migrate(args: argparse.Namespace) -> dict:
         status="done",
         payload={
             "manifest": manifest_path,
+            "cold_start": missing,
             "snapshots": [
                 {"collection": s["collection"], "snapshot_name": s["snapshot_name"]}
                 for s in snapshots
@@ -518,8 +556,11 @@ async def run_rollback(args: argparse.Namespace) -> dict:
     snapshots = {s["collection"]: s for s in manifest.get("snapshots", [])}
     missing = [n for n in COLLECTIONS if n not in snapshots]
     if missing:
+        raise MigrationRefused(f"rollback manifest lacks snapshots for: {missing} (refusing)")
+    unsnapshotted = [n for n in COLLECTIONS if not snapshots[n].get("snapshot_name")]
+    if unsnapshotted:
         raise MigrationRefused(
-            f"rollback manifest lacks snapshots for: {missing} (refusing)"
+            f"no snapshot recorded for: {unsnapshotted} (cold-start create; nothing to roll back)"
         )
 
     qdrant_url = args.qdrant_url or settings.QDRANT_URL
@@ -613,9 +654,7 @@ def startup_dim_check() -> dict:
         finally:
             client.close()
         mismatched = [
-            name
-            for name in COLLECTIONS
-            if live[name]["dense_dim"] != settings.EMBEDDING_DIM
+            name for name in COLLECTIONS if live[name]["dense_dim"] != settings.EMBEDDING_DIM
         ]
         sentinel: dict[str, Any] = {"checked": False, "reason": "sentinel-unread"}
         try:

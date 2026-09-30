@@ -10,7 +10,11 @@ services:
     build:
       context: ./qdrant
     ports:
+      # REST + Web UI dashboard at http://localhost:6333/dashboard
       - "6333:6333"
+    environment:
+      # Web UI is on by default; pin it so a custom image/config can't silently disable it.
+      QDRANT__SERVICE__ENABLE_STATIC_CONTENT: "true"
     volumes:
       - qdrant_data:/qdrant/storage
     restart: unless-stopped

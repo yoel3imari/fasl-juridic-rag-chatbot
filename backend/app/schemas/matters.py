@@ -14,6 +14,17 @@ class MatterCreateIn(BaseModel):
     language: str = Field(default="ar", max_length=10)
 
 
+class MatterUpdateIn(BaseModel):
+    """Partial update: every field optional; only supplied fields are applied."""
+
+    model_config = ConfigDict(frozen=True)
+
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    matter_type: str | None = Field(default=None, max_length=100)
+    jurisdiction: str | None = Field(default=None, max_length=100)
+    language: str | None = Field(default=None, max_length=10)
+
+
 class MatterOut(BaseModel):
     model_config = ConfigDict(frozen=True)
 

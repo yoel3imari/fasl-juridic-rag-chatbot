@@ -32,7 +32,8 @@ async def list_conversations(
         ConversationOut(
             id=r.id,
             matter_id=r.matter_id,
-            matter_title=r.matter_title or f"Matter #{r.matter_id}",
+            matter_title=r.matter_title
+            or (f"Matter #{r.matter_id}" if r.matter_id is not None else None),
             title=r.title,
             created_at=r.created_at,
             message_count=r.message_count,
@@ -58,7 +59,9 @@ async def get_conversation(
     return ConversationDetailOut(
         id=conv.id,
         matter_id=conv.matter_id,
-        matter_title=conv.matter.title if conv.matter else f"Matter #{conv.matter_id}",
+        matter_title=conv.matter.title
+        if conv.matter
+        else (f"Matter #{conv.matter_id}" if conv.matter_id is not None else None),
         title=conv.title,
         created_at=conv.created_at,
         messages=[

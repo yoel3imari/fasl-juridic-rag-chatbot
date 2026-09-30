@@ -37,7 +37,15 @@ class Store(Protocol):
         sparse_text: str,
         limit: int,
         matter_id: int | None = None,
-    ) -> list[dict[str, Any]]: ...
+    ) -> list[dict[str, Any]]:
+        """Dense + sparse query over one collection, pre-filtered by matter_id.
+
+        WARN: ``matter_id=None`` means NO filter at all. For the
+        ``matter_evidence`` collection that returns private evidence from
+        EVERY matter — a cross-matter leak — so passing ``None`` for that
+        collection is forbidden; ``search_matter`` rejects it outright.
+        """
+        ...
 
 
 def clear_search_cache() -> None:
@@ -117,11 +125,17 @@ async def search_matter(
     *,
     store: Store,
     embedder: Embedder,
-    matter_id: int,
+    matter_id: int | None,
     query: str,
     top_k: int = 5,
 ) -> dict[str, Any]:
-    """Hybrid search over matter_evidence, pre-filtered to one matter."""
+    """Hybrid search over matter_evidence, pre-filtered to one matter.
+
+    ``matter_id`` is mandatory: the store builds no filter for ``None``, so
+    an unscoped call would leak evidence from every matter.
+    """
+    if matter_id is None:
+        raise ValueError("matter_id is required for matter evidence search")
     key = ("matter", matter_id, query, top_k)
     if key in _CACHE:
         return _CACHE[key]

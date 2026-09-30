@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -19,6 +21,23 @@ class SectionOut(BaseModel):
     normalized_text: str
     ocr_confidence: float | None
     needs_review: bool
+
+
+class MatterDocumentOut(BaseModel):
+    """One row of GET /matters/{matter_id}/documents (frozen contract)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    document_id: int
+    original_name: str
+    filename: str
+    doc_type: str
+    status: str
+    needs_review: bool
+    chunk_count: int
+    section_count: int
+    page_count: int | None
+    created_at: datetime
 
 
 class UploadOut(BaseModel):

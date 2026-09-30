@@ -74,9 +74,15 @@ OCR_MIN_CHARS_PER_PAGE = 20  # mirrors LIBRARY_OCR_MIN_CHARS text-layer check
 # tokens with 67 newlines (naive local+newlines estimate = 493) dropped the
 # server, so each newline is weighted x4. Private-use (Co) characters were
 # isolated as a suspect and EXONERATED (all Co chunks embed fine).
+# A second killer family (2026-09-30, file id 110 p5:o6 + p19:o30):
+# OCR-spaced tatweel artifacts (e.g. "م ـصـ ـفـن،ة", "ـكـسـ ال ك ـ ال ـح ـ دي")
+# tokenize HEAVIER server-side than the HF snapshot counts locally --
+# local 491/499 with zero newlines still crashed the server (underestimate
+# >=21 tokens). The cap therefore carries a ~60-token safety margin below
+# the 512 served limit instead of sitting at 500.
 # Overlong chunks are SKIPPED and counted (never truncated: both models must
 # see identical text). Production embedder (todo 14) must handle these.
-SERVED_SAFE_TOKENS = 500
+SERVED_SAFE_TOKENS = 450
 NEWLINE_WEIGHT = 4
 
 
@@ -89,9 +95,7 @@ def served_estimate(text: str) -> int:
 
 def _repo_root() -> str:
     here = os.path.dirname(os.path.abspath(__file__))
-    return os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.dirname(here)))
-    )
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(here))))
 
 
 def _git_sha() -> str:
@@ -162,9 +166,7 @@ def build_sha_to_pdf(source_dir: str) -> dict[str, str]:
     mapping: dict[str, str] = {}
     pdfs = sorted(glob.glob(os.path.join(source_dir, "*", "*.pdf")))
     if not pdfs:
-        pdfs = sorted(
-            glob.glob(os.path.join(source_dir, "**", "*.pdf"), recursive=True)
-        )
+        pdfs = sorted(glob.glob(os.path.join(source_dir, "**", "*.pdf"), recursive=True))
     for pdf in pdfs:
         h = hashlib.sha256()
         try:
@@ -276,9 +278,7 @@ def build_sample(
                 "query_end_word": qe,
             }
         )
-    all_keys = [
-        f"{lc}|ocr={of}" for lc in ("short", "medium", "long") for of in ("no", "yes")
-    ]
+    all_keys = [f"{lc}|ocr={of}" for lc in ("short", "medium", "long") for of in ("no", "yes")]
     sample: list[dict] = []
     dropped: list[dict] = []
     for key in all_keys:
@@ -288,9 +288,7 @@ def build_sample(
                 f"only {len(members)} eligible chunks (<{MIN_PER_BUCKET}); "
                 f"{'shortlist PDFs carry a native text layer, OCR path unused' if key.endswith('ocr=yes') else 'length class under-populated in extracted subset'}"
             )
-            dropped.append(
-                {"bucket": key, "n_available": len(members), "reason": reason}
-            )
+            dropped.append({"bucket": key, "n_available": len(members), "reason": reason})
             continue
         sample.extend(members[:per_bucket])
     sample.sort(key=lambda m: str(m["chunk_id"]))
@@ -342,9 +340,7 @@ def _post_embeddings(base_url: str, model: str, texts: list[str]) -> list[list[f
             data = json.load(resp)
         items = data.get("data", [])
         if len(items) != len(batch):
-            raise RuntimeError(
-                f"embedding count mismatch: {len(items)} for {len(batch)}"
-            )
+            raise RuntimeError(f"embedding count mismatch: {len(items)} for {len(batch)}")
         out.extend([list(map(float, it["embedding"])) for it in items])
         i = j
     return out
@@ -451,10 +447,7 @@ def _load_capture(path: str, want_model: str, want_dim: int) -> dict:
     n = payload.get("n", 0)
     if n < MIN_N:
         raise RuntimeError(f"{path}: n={n} < {MIN_N} (never auto-pass on thin data)")
-    if (
-        len(payload.get("chunk_vectors", [])) != n
-        or len(payload.get("query_vectors", [])) != n
-    ):
+    if len(payload.get("chunk_vectors", [])) != n or len(payload.get("query_vectors", [])) != n:
         raise RuntimeError(f"{path}: vector count != n={n} (tampered)")
     if len(payload.get("sample", [])) != n:
         raise RuntimeError(f"{path}: sample count != n={n} (tampered)")
@@ -479,9 +472,7 @@ def _cosine(a: list[float], b: list[float]) -> float:
     return dot / (na * nb)
 
 
-def _recall_at_k(
-    chunk_vecs: list[list[float]], query_vecs: list[list[float]], k: int
-) -> float:
+def _recall_at_k(chunk_vecs: list[list[float]], query_vecs: list[list[float]], k: int) -> float:
     """DENSE-ONLY self-retrieval: fraction of queries whose gold chunk ranks top-k."""
     n = len(chunk_vecs)
     norms_c = [math.sqrt(sum(x * x for x in v)) or 1.0 for v in chunk_vecs]

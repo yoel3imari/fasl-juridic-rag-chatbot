@@ -1,9 +1,18 @@
-"""Chat streaming route: WebSocket /api/v1/chat/stream.
+"""Chat streaming routes: POST /api/v1/chat (SSE, supported) + WebSocket (legacy).
 
-Accepts JSON {matter_id, conversation_id?, content, consent?, system?},
-runs the matter-privacy check first, then streams assistant tokens.
-Every failure is a structured {"type": "error", ...} frame; the socket
-never crashes unhandled.
+POST /api/v1/chat accepts JSON {matter_id?, conversation_id?, content,
+consent?, provider?, model?}. `matter_id` is OPTIONAL: a conversation may
+be matterless, in which case retrieval is authority-only. Before retrieval
+the LLM classifies intent — Moroccan-legal questions proceed down the dual
+RAG path, anything else is answered with the legal-only clarification in
+`app.domain.prompts.OUT_OF_SCOPE_REPLY` (the intent gate in
+`app.domain.intent`, enforced once on the decision round and once on a
+constrained classification round).
+
+The WebSocket handler below is legacy — accepts JSON {matter_id,
+conversation_id?, content, consent?, system?}, runs the matter-privacy
+check first, then streams assistant tokens. Every failure is a structured
+{"type": "error", ...} frame; the socket never crashes unhandled.
 
 LEGACY — the WebSocket chat_stream handler below is not used by the
 frontend and is not covered by the SSE contract test
@@ -36,7 +45,7 @@ from app.domain.privacy import (
     PrivacyViolationError,
     check_privacy,
 )
-from app.domain.prompts import PROVISIONAL_NOT_FOUND, assemble_prompt
+from app.domain.prompts import OUT_OF_SCOPE_REPLY, PROVISIONAL_NOT_FOUND, assemble_prompt
 from app.domain.rerank import mmr_select
 from app.infrastructure import llm as llm_mod
 from app.infrastructure.llm.errors import InvalidModelError, ProviderUnreachableError
@@ -108,8 +117,7 @@ _STATUS_MESSAGES: dict[str, str] = {
 def _frames(*stages: str) -> list[dict[str, Any]]:
     """Status frames for the given stages, in order."""
     return [
-        {"type": "status", "stage": stage, "message": _STATUS_MESSAGES[stage]}
-        for stage in stages
+        {"type": "status", "stage": stage, "message": _STATUS_MESSAGES[stage]} for stage in stages
     ]
 
 
@@ -172,31 +180,35 @@ async def _sse_frames(
 async def chat_rag(
     body: RagChatIn, session: Annotated[AsyncSession, Depends(get_db)]
 ) -> StreamingResponse:
-    """Dual RAG query: ReAct tool loop → rerank → reason → SSE stream.
+    """Dual RAG query: intent gate → ReAct tool loop → rerank → reason → SSE.
+
+    `body.matter_id` is optional. Conversations are owned by (conversation
+    id, matter id) pairs: `None == None` admits a matterless conversation,
+    while `None != 7` / `7 != None` reject adopting a conversation across
+    a matter boundary (404, same detail string).
 
     Byte order is contractual: status events first, then citations event,
-    then token events, then done. Every query enters the ReAct loop: the
-    LLM decides per query between a direct answer (zero tool calls, no
-    retrieval — this is how greetings/smalltalk are handled) or up to
-    MAX_TOOL_ROUNDS retrieval tool rounds; tool results flow through the
-    existing rerank → build_citations → assemble_prompt path. Tool rounds
-    that stay empty in ALL rounds short-circuit to a provisional not-found
-    response without any grounded provider call — an ungrounded
-    free-answer after attempted retrieval is never used.
+    then token events, then done. Every query first passes the intent gate:
+    an out-of-scope message short-circuits to OUT_OF_SCOPE_REPLY with an
+    extra `out_of_scope: True` key on its done frame and no retrieval.
+    Everything else enters the ReAct loop: the LLM decides per query
+    between a direct answer (zero tool calls, no retrieval — this is how
+    greetings/smalltalk are handled) or up to MAX_TOOL_ROUNDS retrieval
+    tool rounds; tool results flow through the existing rerank →
+    build_citations → assemble_prompt path. Tool rounds that stay empty in
+    ALL rounds short-circuit to a provisional not-found response without
+    any grounded provider call — an ungrounded free-answer after attempted
+    retrieval is never used.
     """
     settings = Settings()  # type: ignore[call-arg]
-    resolved = resolve_request_llm_settings(
-        settings, provider=body.provider, model=body.model
-    )
+    resolved = resolve_request_llm_settings(settings, provider=body.provider, model=body.model)
     selected_provider = resolved.provider.strip().lower()
     selected_model = resolved.model.strip()
 
     if body.conversation_id is not None:
         conv = await session.get(Conversation, body.conversation_id)
         if conv is None or conv.matter_id != body.matter_id:
-            raise HTTPException(
-                status_code=404, detail="conversation not found in this matter"
-            )
+            raise HTTPException(status_code=404, detail="conversation not found in this matter")
     else:
         conv = Conversation(matter_id=body.matter_id, title=body.content[:60])
         session.add(conv)
@@ -229,9 +241,7 @@ async def chat_rag(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     # Remember last-used provider/model server-side (before streaming).
     try:
-        settings_store.save_llm_settings(
-            provider=selected_provider, model=selected_model
-        )
+        settings_store.save_llm_settings(provider=selected_provider, model=selected_model)
     except OSError:
         pass
     # Real pydantic-ai agents get native tools registered; test doubles
@@ -291,9 +301,26 @@ async def chat_rag(
                 statuses=failed_stages,
                 citations=[],
                 content=_failed_content(),
-                persist=lambda: _persist_message(
-                    session, conversation_id, "", []
-                ),
+                persist=lambda: _persist_message(session, conversation_id, "", []),
+            ),
+            media_type="text/event-stream",
+        )
+
+    if outcome.out_of_scope:
+        refusal = OUT_OF_SCOPE_REPLY
+
+        return StreamingResponse(
+            _sse_frames(
+                statuses=_frames("classifying"),
+                citations=[],
+                content=_halved_tokens(refusal),
+                persist=lambda: _persist_message(session, conversation_id, refusal, []),
+                done=lambda: {
+                    "type": "done",
+                    "not_found": False,
+                    "conversation_id": conversation_id,
+                    "out_of_scope": True,
+                },
             ),
             media_type="text/event-stream",
         )
@@ -306,9 +333,7 @@ async def chat_rag(
                 statuses=_frames("classifying"),
                 citations=[],
                 content=_halved_tokens(text),
-                persist=lambda: _persist_message(
-                    session, conversation_id, text, []
-                ),
+                persist=lambda: _persist_message(session, conversation_id, text, []),
                 done=lambda: {
                     "type": "done",
                     "not_found": False,
@@ -341,9 +366,7 @@ async def chat_rag(
                 statuses=_frames("classifying", "searching"),
                 citations=[],
                 content=_halved_tokens(text),
-                persist=lambda: _persist_message(
-                    session, conversation_id, text, []
-                ),
+                persist=lambda: _persist_message(session, conversation_id, text, []),
                 done=lambda: {
                     "type": "done",
                     "not_found": True,
@@ -369,9 +392,7 @@ async def chat_rag(
                 "type": "error",
                 "code": "provider_unreachable",
                 "detail": str(
-                    ProviderUnreachableError(
-                        provider=selected_provider, reason=str(exc)
-                    )
+                    ProviderUnreachableError(provider=selected_provider, reason=str(exc))
                 ),
                 "conversation_id": conversation_id,
             }
@@ -390,9 +411,7 @@ async def chat_rag(
             statuses=_frames("classifying", "searching", "thinking"),
             citations=citations,
             content=_stream_answer(),
-            persist=lambda: _persist_message(
-                session, conversation_id, "".join(parts), citations
-            ),
+            persist=lambda: _persist_message(session, conversation_id, "".join(parts), citations),
             done=_done_full,
         ),
         media_type="text/event-stream",
@@ -417,9 +436,7 @@ async def chat_stream(ws: WebSocket) -> None:
         try:
             payload = ChatIn.model_validate_json(raw)
         except ValidationError as exc:
-            await _send_error(
-                ws, "invalid_payload", f"malformed chat payload: {exc.errors()}"
-            )
+            await _send_error(ws, "invalid_payload", f"malformed chat payload: {exc.errors()}")
             continue
         try:
             check_privacy(
@@ -436,22 +453,14 @@ async def chat_stream(ws: WebSocket) -> None:
             await _send_error(ws, "consent_required", str(exc))
             continue
         try:
-            agent = llm_mod.get_agent(
-                provider=resolved.provider, model=resolved.model
-            )
+            agent = llm_mod.get_agent(provider=resolved.provider, model=resolved.model)
             async with agent.run_stream(payload.content) as result:
                 async for chunk in result.stream_text(delta=True):
                     await ws.send_text(json.dumps({"type": "token", "text": chunk}))
             await ws.send_text(json.dumps({"type": "done"}))
-        except (
-            Exception
-        ) as exc:  # provider down, bad key, timeout: degrade, never crash
+        except Exception as exc:  # provider down, bad key, timeout: degrade, never crash
             await _send_error(
                 ws,
                 "provider_unreachable",
-                str(
-                    ProviderUnreachableError(
-                        provider=resolved.provider, reason=str(exc)
-                    )
-                ),
+                str(ProviderUnreachableError(provider=resolved.provider, reason=str(exc))),
             )

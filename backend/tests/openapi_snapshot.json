@@ -237,8 +237,15 @@
             "type": "integer"
           },
           "matter_id": {
-            "title": "Matter Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matter Id"
           },
           "matter_title": {
             "anyOf": [
@@ -285,8 +292,15 @@
             "type": "integer"
           },
           "matter_id": {
-            "title": "Matter Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matter Id"
           },
           "matter_title": {
             "anyOf": [
@@ -697,6 +711,73 @@
         "title": "MatterCreateIn",
         "type": "object"
       },
+      "MatterDocumentOut": {
+        "description": "One row of GET /matters/{matter_id}/documents (frozen contract).",
+        "properties": {
+          "chunk_count": {
+            "title": "Chunk Count",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "doc_type": {
+            "title": "Doc Type",
+            "type": "string"
+          },
+          "document_id": {
+            "title": "Document Id",
+            "type": "integer"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "needs_review": {
+            "title": "Needs Review",
+            "type": "boolean"
+          },
+          "original_name": {
+            "title": "Original Name",
+            "type": "string"
+          },
+          "page_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Count"
+          },
+          "section_count": {
+            "title": "Section Count",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_id",
+          "original_name",
+          "filename",
+          "doc_type",
+          "status",
+          "needs_review",
+          "chunk_count",
+          "section_count",
+          "page_count",
+          "created_at"
+        ],
+        "title": "MatterDocumentOut",
+        "type": "object"
+      },
       "MatterOut": {
         "properties": {
           "id": {
@@ -728,6 +809,62 @@
           "language"
         ],
         "title": "MatterOut",
+        "type": "object"
+      },
+      "MatterUpdateIn": {
+        "description": "Partial update: every field optional; only supplied fields are applied.",
+        "properties": {
+          "jurisdiction": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jurisdiction"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "maxLength": 10,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "matter_type": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matter Type"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "MatterUpdateIn",
         "type": "object"
       },
       "MessageOut": {
@@ -908,8 +1045,15 @@
             "title": "Conversation Id"
           },
           "matter_id": {
-            "title": "Matter Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matter Id"
           },
           "model": {
             "anyOf": [
@@ -935,7 +1079,6 @@
           }
         },
         "required": [
-          "matter_id",
           "content"
         ],
         "title": "RagChatIn",
@@ -1207,7 +1350,7 @@
   "paths": {
     "/api/v1/chat": {
       "post": {
-        "description": "Dual RAG query: ReAct tool loop \u2192 rerank \u2192 reason \u2192 SSE stream.\n\nByte order is contractual: status events first, then citations event,\nthen token events, then done. Every query enters the ReAct loop: the\nLLM decides per query between a direct answer (zero tool calls, no\nretrieval \u2014 this is how greetings/smalltalk are handled) or up to\nMAX_TOOL_ROUNDS retrieval tool rounds; tool results flow through the\nexisting rerank \u2192 build_citations \u2192 assemble_prompt path. Tool rounds\nthat stay empty in ALL rounds short-circuit to a provisional not-found\nresponse without any grounded provider call \u2014 an ungrounded\nfree-answer after attempted retrieval is never used.",
+        "description": "Dual RAG query: intent gate \u2192 ReAct tool loop \u2192 rerank \u2192 reason \u2192 SSE.\n\n`body.matter_id` is optional. Conversations are owned by (conversation\nid, matter id) pairs: `None == None` admits a matterless conversation,\nwhile `None != 7` / `7 != None` reject adopting a conversation across\na matter boundary (404, same detail string).\n\nByte order is contractual: status events first, then citations event,\nthen token events, then done. Every query first passes the intent gate:\nan out-of-scope message short-circuits to OUT_OF_SCOPE_REPLY with an\nextra `out_of_scope: True` key on its done frame and no retrieval.\nEverything else enters the ReAct loop: the LLM decides per query\nbetween a direct answer (zero tool calls, no retrieval \u2014 this is how\ngreetings/smalltalk are handled) or up to MAX_TOOL_ROUNDS retrieval\ntool rounds; tool results flow through the existing rerank \u2192\nbuild_citations \u2192 assemble_prompt path. Tool rounds that stay empty in\nALL rounds short-circuit to a provisional not-found response without\nany grounded provider call \u2014 an ungrounded free-answer after attempted\nretrieval is never used.",
         "operationId": "chat_rag_api_v1_chat_post",
         "requestBody": {
           "content": {
@@ -1759,6 +1902,143 @@
         ]
       }
     },
+    "/api/v1/matters/{matter_id}": {
+      "delete": {
+        "description": "Hard-delete a matter and everything scoped to it, purging vectors/blobs.",
+        "operationId": "delete_matter_api_v1_matters__matter_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "matter_id",
+            "required": true,
+            "schema": {
+              "title": "Matter Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Matter Api V1 Matters  Matter Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Matter",
+        "tags": [
+          "matters"
+        ]
+      },
+      "get": {
+        "description": "Fetch one matter by id; 404 when it does not exist.",
+        "operationId": "get_matter_api_v1_matters__matter_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "matter_id",
+            "required": true,
+            "schema": {
+              "title": "Matter Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatterOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Matter",
+        "tags": [
+          "matters"
+        ]
+      },
+      "patch": {
+        "description": "Apply only the fields present in the body; 404 when the matter is absent.",
+        "operationId": "update_matter_api_v1_matters__matter_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "matter_id",
+            "required": true,
+            "schema": {
+              "title": "Matter Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MatterUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatterOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Matter",
+        "tags": [
+          "matters"
+        ]
+      }
+    },
     "/api/v1/matters/{matter_id}/analysis": {
       "post": {
         "description": "Run the rule-based analysis over stored matter evidence and persist it.",
@@ -1819,6 +2099,53 @@
         ]
       }
     },
+    "/api/v1/matters/{matter_id}/documents": {
+      "get": {
+        "description": "List a matter's documents (id ascending); 200 [] when there are none.",
+        "operationId": "list_documents_api_v1_matters__matter_id__documents_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "matter_id",
+            "required": true,
+            "schema": {
+              "title": "Matter Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MatterDocumentOut"
+                  },
+                  "title": "Response List Documents Api V1 Matters  Matter Id  Documents Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Documents",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
     "/api/v1/matters/{matter_id}/documents/upload": {
       "post": {
         "description": "Store the immutable original, run the pipeline, persist provenance.",
@@ -1867,6 +2194,60 @@
           }
         },
         "summary": "Upload Document",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/api/v1/matters/{matter_id}/documents/{document_id}": {
+      "delete": {
+        "description": "Hard-delete one document: rows, evidence points, and blob originals.",
+        "operationId": "delete_document_api_v1_matters__matter_id__documents__document_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "matter_id",
+            "required": true,
+            "schema": {
+              "title": "Matter Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Document Api V1 Matters  Matter Id  Documents  Document Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Document",
         "tags": [
           "documents"
         ]

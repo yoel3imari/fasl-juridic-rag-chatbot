@@ -42,7 +42,7 @@ interface CommandPaletteProps {
   onOpenChange: (open: boolean) => void;
   activeMatterId: number | null;
   onSelectMatter: (id: number) => void;
-  onSelectConversation?: (conversationId: number, matterId: number) => void;
+  onSelectConversation?: (conversationId: number, matterId: number | null) => void;
   onOpenNewMatterModal: () => void;
   onTriggerAction?: (action: "analysis" | "upload" | "draft" | "library") => void;
 }

@@ -11,16 +11,19 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+from typing import Any
 
 import pytest
 
 from app.cli.library.bulk_migrate import (
     FAIL_EXIT,
     MigrationRefused,
+    collection_state,
     load_gate_artifact,
     preflight,
     resolve_sqlite_path,
     run_migrate,
+    run_rollback,
     snapshot_one,
 )
 
@@ -135,9 +138,7 @@ def test_snapshot_export_failure_before_delete(tmp_path) -> None:
             calls.append(f"delete:{name}")
 
     with pytest.raises(Exception, match="exploded"):
-        snapshot_one(
-            _Client(), "http://localhost:6333", "legal_authorities", str(tmp_path), 2
-        )
+        snapshot_one(_Client(), "http://localhost:6333", "legal_authorities", str(tmp_path), 2)
     assert not [c for c in calls if c.startswith("delete:")]
 
 
@@ -169,3 +170,189 @@ def test_manifest_roundtrip_shape(tmp_path) -> None:
     by_collection = {s["collection"]: s for s in loaded["snapshots"]}
     assert by_collection["matter_evidence"]["pre_count"] == 3
     assert by_collection["legal_authorities"]["pre_count"] == 2
+
+
+class _NotFound(Exception):
+    """Stub for qdrant_client's UnexpectedResponse on a missing collection."""
+
+    def __init__(self) -> None:
+        super().__init__("Not found: Collection `x` doesn't exist!")
+        self.status_code = 404
+
+
+def test_collection_state_missing_returns_exists_false() -> None:
+    """Given a Qdrant without the collection (fresh volume, cold start),
+    When collection_state reads it,
+    Then it returns exists=False with empty config instead of raising."""
+
+    class _Client:
+        def get_collection(self, name):
+            raise _NotFound()
+
+    state = collection_state(_Client(), "legal_authorities")
+    assert state == {
+        "name": "legal_authorities",
+        "exists": False,
+        "dense_dim": None,
+        "dense_distance": None,
+        "sparse": [],
+        "on_disk_payload": None,
+        "payload_indexes": [],
+        "points_count": 0,
+    }
+
+
+def test_collection_state_non_404_still_raises() -> None:
+    """Given a non-404 Qdrant failure, When collection_state reads it,
+    Then it raises (only "missing collection" is a state, the rest are errors)."""
+
+    class _Client:
+        def get_collection(self, name):
+            raise RuntimeError("qdrant exploded")
+
+    with pytest.raises(RuntimeError, match="exploded"):
+        collection_state(_Client(), "legal_authorities")
+
+
+def test_run_migrate_cold_start_creates_without_delete_or_snapshot(tmp_path, monkeypatch) -> None:
+    """Given a Qdrant with no collections and a fresh gate at live HEAD,
+    When run_migrate --confirm runs,
+    Then it creates both collections at dim, deletes nothing, snapshots
+    nothing, and writes a done sentinel recording the cold start."""
+    import types
+
+    import app.cli.library.bulk_migrate as mig
+
+    calls: list[str] = []
+
+    class _Client:
+        def __init__(self) -> None:
+            self.collections: set[str] = set()
+
+        def get_collection(self, name):
+            if name not in self.collections:
+                raise _NotFound()
+            return types.SimpleNamespace(
+                config=types.SimpleNamespace(
+                    params=types.SimpleNamespace(
+                        vectors={"dense": {"size": DIM, "distance": "Cosine"}},
+                        sparse_vectors={"lexical": {}},
+                        on_disk_payload=True,
+                    )
+                ),
+                payload_schema={f: {} for f in ("source", "edition", "language", "category")},
+            )
+
+        def create_collection(self, collection_name: str, **kwargs: Any) -> None:
+            calls.append(f"create:{collection_name}")
+            self.collections.add(collection_name)
+
+        def delete_collection(self, name) -> None:
+            calls.append(f"delete:{name}")
+
+        def create_snapshot(self, name, wait=True):
+            raise AssertionError("must not snapshot a collection that never existed")
+
+        def count(self, name, exact=True):
+            return types.SimpleNamespace(count=0)
+
+        def create_payload_index(self, *args, **kwargs) -> None:
+            calls.append("index")
+
+        def close(self) -> None: ...
+
+    client = _Client()
+    monkeypatch.setattr(mig, "_client_for", lambda url: client)
+
+    live_sha = mig.live_git_sha()
+    gate_file = tmp_path / "gate.json"
+    gate_file.write_text(json.dumps({**_good_gate(), "git_sha": live_sha}), encoding="utf-8")
+    parity_file = tmp_path / "parity.json"
+    parity_file.write_text(json.dumps({**_good_parity(), "git_sha": live_sha}), encoding="utf-8")
+    db_file = tmp_path / "cold.db"
+    db_url = f"sqlite+aiosqlite:///{db_file}"
+    asyncio.run(
+        mig.write_sentinel(
+            db_url,
+            kind="migrate",
+            model=MODEL,
+            dim=DIM,
+            sha="0" * 40,
+            status="done",
+            payload={},
+        )
+    )
+    import sqlite3
+
+    with sqlite3.connect(db_file) as conn:
+        conn.execute("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)")
+        conn.execute("INSERT INTO alembic_version VALUES ('head')")
+    args = argparse.Namespace(
+        rollback=False,
+        confirm=True,
+        manifest=None,
+        qdrant_url="http://x",
+        db_url=db_url,
+        snapshot_dir=str(tmp_path / "snaps"),
+        gate=str(gate_file),
+        parity=str(parity_file),
+    )
+    out = asyncio.run(run_migrate(args))
+    assert out["action"] == "migrate"
+    assert sorted(out["cold_start"]) == [
+        "legal_authorities",
+        "matter_evidence",
+    ]
+    assert sorted(c for c in calls if c.startswith("create:")) == [
+        "create:legal_authorities",
+        "create:matter_evidence",
+    ]
+    assert not [c for c in calls if c.startswith("delete:")]
+    row = (
+        sqlite3.connect(db_file)
+        .execute(
+            "select status, git_sha, kind, payload_json from library_import_runs where id = ?",
+            (out["sentinel_id"],),
+        )
+        .fetchone()
+    )
+    assert row[:3] == ("done", live_sha, "migrate")
+    assert sorted(json.loads(row[3])["cold_start"]) == [
+        "legal_authorities",
+        "matter_evidence",
+    ]
+
+
+def test_rollback_cold_start_manifest_refuses(tmp_path) -> None:
+    """Given a migrate manifest whose snapshot is None (cold-start create),
+    When run_rollback runs,
+    Then it refuses (there is no prior state to restore) instead of crashing."""
+    manifest = {
+        "model": MODEL,
+        "dim": DIM,
+        "snapshots": [
+            {
+                "collection": "matter_evidence",
+                "snapshot_name": None,
+                "reason": "collection-absent-at-migrate",
+                "pre_count": 0,
+            },
+            {
+                "collection": "legal_authorities",
+                "snapshot_name": None,
+                "reason": "collection-absent-at-migrate",
+                "pre_count": 0,
+            },
+        ],
+    }
+    path = tmp_path / "migrate-manifest.json"
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    args = argparse.Namespace(
+        rollback=True,
+        manifest=str(path),
+        qdrant_url="http://x",
+        db_url="sqlite+aiosqlite:////tmp/x.db",
+        snapshot_dir="/tmp/x",
+    )
+    with pytest.raises(MigrationRefused, match="nothing to roll back"):
+        asyncio.run(run_rollback(args))

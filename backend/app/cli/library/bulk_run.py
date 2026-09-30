@@ -29,6 +29,12 @@ Embed details (todo 14 client, todo 6 guard):
   pre-filtered: marked ``failed`` with report reason
   ``served-context-exceeded`` and NEVER sent (a killer input crash-loops
   the server);
+* transport-failure isolation: if a batch still drops the connection
+  (the estimate can undercount spaced-tatweel OCR artifacts by ~20+
+  tokens), the batch is retried text-by-text; each text that individually
+  drops the connection is marked ``failed`` with report reason
+  ``embed-transport-failure`` while the surviving texts still embed --
+  one killer chunk can no longer abort the whole run;
 * vectors are persisted per file to ``<artifact_dir>/<sha>.embed.jsonl.zst``
   BEFORE rows are marked embedded, so a kill between embed and index
   resumes from the cache with zero re-embed.
@@ -55,6 +61,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import anyio
+import httpx
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import app.models  # noqa: F401  (register ledger metadata)
@@ -79,7 +87,13 @@ FAIL_EXIT = 2
 
 MIN_PARITY_COSINE = 0.99
 SERVED_EXCEEDED_REASON = "served-context-exceeded"
+EMBED_TRANSPORT_FAILURE_REASON = "embed-transport-failure"
 EMBED_CACHE_SUFFIX = ".embed.jsonl.zst"
+# Single-text isolation retries: after a killer drops the connection the
+# server auto-restarts within seconds, so one sleep-backed retry separates
+# "server was still restarting" from "this text is a genuine killer".
+_ISOLATED_SINGLE_RETRIES = 1
+_ISOLATED_RETRY_DELAY_SECONDS = 5.0
 
 
 class RunRefused(Exception):
@@ -136,17 +150,13 @@ def preflight(
         )
     mean_cosine = parity.get("mean_cosine")
     if not isinstance(mean_cosine, (int, float)) or mean_cosine < MIN_PARITY_COSINE:
-        problems.append(
-            f"parity mean_cosine={mean_cosine!r} < {MIN_PARITY_COSINE} (refusing)"
-        )
+        problems.append(f"parity mean_cosine={mean_cosine!r} < {MIN_PARITY_COSINE} (refusing)")
     if parity.get("model") != model:
         problems.append(f"parity model={parity.get('model')!r} != live {model!r}")
     if parity.get("dim") != dim:
         problems.append(f"parity dim={parity.get('dim')!r} != live {dim!r}")
     if parity.get("git_sha") != sha:
-        problems.append(
-            f"parity git_sha={parity.get('git_sha')!r} != live HEAD {sha!r} (stale)"
-        )
+        problems.append(f"parity git_sha={parity.get('git_sha')!r} != live HEAD {sha!r} (stale)")
     if problems:
         raise RunRefused("; ".join(problems))
     for kind, row in (("migrate", migrate_row), ("reembed-matter", reembed_row)):
@@ -166,9 +176,7 @@ def preflight(
     }
 
 
-def _sentinel_problem(
-    kind: str, row: dict | None, *, model: str, dim: int, sha: str
-) -> str | None:
+def _sentinel_problem(kind: str, row: dict | None, *, model: str, dim: int, sha: str) -> str | None:
     """One missing-step message for a sentinel row, or None when it matches."""
     if row is None:
         return (
@@ -183,9 +191,7 @@ def _sentinel_problem(
     if row.get("dim") != dim:
         mismatches.append(f"dim={row.get('dim')!r} != live {dim!r}")
     if row.get("git_sha") != sha:
-        mismatches.append(
-            f"git_sha={row.get('git_sha')!r} != live HEAD {sha!r} (stale)"
-        )
+        mismatches.append(f"git_sha={row.get('git_sha')!r} != live HEAD {sha!r} (stale)")
     if mismatches:
         return f"{kind} sentinel mismatch: " + "; ".join(mismatches) + " (refusing)"
     return None
@@ -266,9 +272,7 @@ async def check_preflight(
     parity = load_gate_artifact(parity_path, "parity")
     migrate_row = await _latest_sentinel(session, "migrate")
     reembed_row = await _latest_sentinel(session, "reembed-matter")
-    return preflight(
-        gate, parity, migrate_row, reembed_row, model=model, dim=dim, sha=sha
-    )
+    return preflight(gate, parity, migrate_row, reembed_row, model=model, dim=dim, sha=sha)
 
 
 async def scope_file_ids(session: Any, limit: int | None) -> list[int]:
@@ -330,9 +334,9 @@ async def ensure_extract(
         ):
             report["skipped_done"] += 1  # resume: never redo finished work
             continue
-        if row.extract_status == "quarantined" and not (
-            row.quarantine_reason or ""
-        ).startswith(RETRIABLE_QUARANTINE_PREFIXES):
+        if row.extract_status == "quarantined" and not (row.quarantine_reason or "").startswith(
+            RETRIABLE_QUARANTINE_PREFIXES
+        ):
             report["skipped_done"] += 1  # terminal quarantine stays quarantined
             continue
         job = ExtractJob(
@@ -369,6 +373,52 @@ async def ensure_extract(
     return report
 
 
+async def _embed_batch_isolated(
+    embedder: Any, sendable: list[Any], texts: list[str]
+) -> tuple[list[tuple[Any, str, list[float]]], list[Any], int]:
+    """Embed one batch; isolate killer texts on transport failure.
+
+    Returns ``(good, failed, calls)`` where ``good`` is
+    ``[(chunk, text, vec)]`` for surviving texts, ``failed`` the chunks
+    whose SINGLE-text request persistently dropped the connection (server
+    crash-loop), and ``calls`` the number of ``embed_sync`` invocations
+    made. Only :class:`httpx.TransportError` (5xx/timeout/disconnect --
+    the client already retried 4x) triggers isolation; any other exception
+    propagates.
+    """
+    try:
+        vectors = embedder.embed_sync(texts)
+        return (
+            [(c, t, v) for c, t, v in zip(sendable, texts, vectors, strict=True)],
+            [],
+            1,
+        )
+    except httpx.TransportError:
+        pass
+    # Batch dropped the connection: retry text-by-text so one killer cannot
+    # take the whole batch (or run) down with it. A short sleep between the
+    # single attempts lets the auto-restarting server come back, separating
+    # "server was still restarting" from a genuine killer text.
+    good: list[tuple[Any, str, list[float]]] = []
+    failed: list[Any] = []
+    calls = 1
+    for chunk, text in zip(sendable, texts, strict=True):
+        vec: list[float] | None = None
+        for attempt in range(_ISOLATED_SINGLE_RETRIES + 1):
+            try:
+                vec = embedder.embed_sync([text])[0]
+                break
+            except httpx.TransportError:
+                calls += 1
+                if attempt < _ISOLATED_SINGLE_RETRIES:
+                    await anyio.sleep(_ISOLATED_RETRY_DELAY_SECONDS)
+        if vec is None:
+            failed.append(chunk)
+        else:
+            good.append((chunk, text, vec))
+    return good, failed, calls
+
+
 async def ensure_embed(
     session: Any,
     scope_ids: list[int],
@@ -394,6 +444,8 @@ async def ensure_embed(
         "chunks_reused_cache": 0,
         "chunks_skipped": 0,
         "skipped_ids": [],
+        "chunks_failed_transport": 0,
+        "transport_failed_ids": [],
         "embed_calls": 0,
     }
     t0 = time.monotonic()
@@ -414,9 +466,7 @@ async def ensure_embed(
         if not getattr(row, "artifact_sha256", None):
             continue  # unverifiable: ensure_extract owns the re-drive
         records = list(
-            read_verified_artifact(
-                artifact_path_for(adir, row.sha256), row.artifact_sha256
-            )
+            read_verified_artifact(artifact_path_for(adir, row.sha256), row.artifact_sha256)
         )
         existing = {c.chunk_id: c for c in await repo.list_chunks(row.id)}
         for ord_, rec in enumerate(records):
@@ -427,9 +477,7 @@ async def ensure_embed(
         await session.flush()
         pending = [c for c in existing.values() if c.status == "pending"]
         if not pending:
-            if all(
-                c.status in ("embedded", "indexed", "failed") for c in existing.values()
-            ):
+            if all(c.status in ("embedded", "indexed", "failed") for c in existing.values()):
                 set_file_stage_status(row, "embed_status", "embedded")
                 report["files_embedded"] += 1
                 await session.commit()
@@ -445,9 +493,7 @@ async def ensure_embed(
                 set_chunk_status(chunk, "failed")
                 report["chunks_skipped"] += 1
                 report["skipped_ids"].append(chunk.chunk_id)
-        sendable = [
-            c for c in pending if c.status == "pending" and c.chunk_id not in cache
-        ]
+        sendable = [c for c in pending if c.status == "pending" and c.chunk_id not in cache]
         for chunk in pending:
             if chunk.chunk_id in cache and chunk.status == "pending":
                 if len(cache[chunk.chunk_id]) != dim:
@@ -461,38 +507,45 @@ async def ensure_embed(
         if sendable:
             texts = [str(by_id[c.chunk_id].get("text", "")) for c in sendable]
             chars_total += sum(len(t) for t in texts)
-            vectors = embedder.embed_sync(texts)
-            report["embed_calls"] += 1
-            if len(vectors) != len(sendable):
-                raise RunFailed(
-                    f"embedding count mismatch: {len(vectors)} vectors "
-                    f"for {len(sendable)} texts ({row.path}; refusing)"
+            good, failed, calls = await _embed_batch_isolated(embedder, sendable, texts)
+            report["embed_calls"] += calls
+            for chunk in failed:
+                set_chunk_status(chunk, "failed")
+                report["chunks_failed_transport"] += 1
+                report["transport_failed_ids"].append(chunk.chunk_id)
+            if failed:
+                print(
+                    f"embed: isolated {len(failed)} killer chunk(s) "
+                    f"reason={EMBED_TRANSPORT_FAILURE_REASON} (never retried "
+                    f"in batch; {row.path})",
+                    flush=True,
                 )
+            vectors = [vec for _, _, vec in good]
+            good_texts = [text for _, text, _ in good]
+            sendable = [chunk for chunk, _, _ in good]
             for chunk, vec in zip(sendable, vectors, strict=True):
                 if len(vec) != dim:
                     raise RunFailed(
-                        f"embed dim {len(vec)} != configured {dim} "
-                        f"for {chunk.chunk_id} (refusing)"
+                        f"embed dim {len(vec)} != configured {dim} for {chunk.chunk_id} (refusing)"
                     )
                 cache[chunk.chunk_id] = [float(v) for v in vec]
-            write_embed_cache(cache_path, cache)  # cache BEFORE ledger marks
-            for chunk in sendable:
-                set_chunk_status(chunk, "embedded")
-            report["chunks_embedded"] += len(sendable)
-            chars_done += sum(len(t) for t in texts)
-            eta = estimate_eta_seconds(
-                chars_done, max(chars_total, chars_done + 1), time.monotonic() - t0
-            )
-            print(
-                f"embed: {row.path} chunks={len(sendable)} "
-                f"chars={chars_done}/{chars_total} "
-                f"eta_s={None if eta is None else round(eta, 1)}",
-                flush=True,
-            )
+            if good:
+                write_embed_cache(cache_path, cache)  # cache BEFORE ledger marks
+                for chunk in sendable:
+                    set_chunk_status(chunk, "embedded")
+                report["chunks_embedded"] += len(sendable)
+                chars_done += sum(len(t) for t in good_texts)
+                eta = estimate_eta_seconds(
+                    chars_done, max(chars_total, chars_done + 1), time.monotonic() - t0
+                )
+                print(
+                    f"embed: {row.path} chunks={len(sendable)} "
+                    f"chars={chars_done}/{chars_total} "
+                    f"eta_s={None if eta is None else round(eta, 1)}",
+                    flush=True,
+                )
         remaining = [
-            c
-            for c in existing.values()
-            if c.status not in ("embedded", "indexed", "failed")
+            c for c in existing.values() if c.status not in ("embedded", "indexed", "failed")
         ]
         if not remaining:
             set_file_stage_status(row, "embed_status", "embedded")

@@ -29,3 +29,15 @@ backend/data/migrate-snapshots/
 .idea/
 .vscode/
 .omo/
+
+# Local indexes / runtime artifacts (never commit)
+/.codegraph/
+*.db
+*.sqlite*
+backend/data/.library-writer.lock
+backend/data/ledger-backup-*.db
+
+# Generated quality-gate / parity outputs (regenerable via bulk runs)
+backend/gate-*.json
+backend/parity.json
+backend/quality_gate.json

@@ -5,16 +5,20 @@ ingestion pipeline (which commits provenance before network I/O, then commits
 the indexing status separately, so no DB transaction is held across embedding
 or vector-store calls), and translates typed pipeline errors into
 HTTP statuses. Oversize bodies are rejected before buffering the whole file.
+
+Also owns the document lifecycle reads/deletes under the same prefix: list
+documents for a matter, and hard-delete one document (rows + evidence points
++ blob originals via app.services.matter_cleanup).
 """
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.errors import map_error
+from app.api.errors import NotFoundError, map_error
 from app.domain.ingestion.errors import (
     CorruptFileError,
     MatterNotFoundError,
@@ -24,10 +28,62 @@ from app.domain.ingestion.errors import (
 )
 from app.domain.ingestion.schemas import UploadInput
 from app.models.base import get_db
-from app.schemas.documents import SectionOut, UploadOut
+from app.repositories.document import DocumentRepository
+from app.repositories.matter import MatterRepository
+from app.schemas.documents import MatterDocumentOut, SectionOut, UploadOut
 from app.services import ingestion as pipeline_mod
+from app.services.matter_cleanup import purge_document
 
 router = APIRouter(prefix="/api/v1/matters", tags=["documents"])
+
+
+@router.get("/{matter_id}/documents", response_model=list[MatterDocumentOut])
+async def list_documents(
+    matter_id: int,
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> list[MatterDocumentOut]:
+    """List a matter's documents (id ascending); 200 [] when there are none."""
+    if await MatterRepository(session).get(matter_id) is None:
+        raise HTTPException(*map_error(NotFoundError("matter not found")))
+    rows = await DocumentRepository(session).list_detail_for_matter(matter_id)
+    return [
+        MatterDocumentOut(
+            document_id=row.document.id,
+            original_name=row.document.original_name,
+            filename=row.document.filename,
+            doc_type=row.document.doc_type,
+            status=row.document.status,
+            needs_review=row.document.status == "needs_review",
+            chunk_count=row.document.chunk_count,
+            section_count=row.section_count,
+            page_count=row.page_count,
+            created_at=row.document.created_at,
+        )
+        for row in rows
+    ]
+
+
+@router.delete(
+    "/{matter_id}/documents/{document_id}",
+    status_code=status.HTTP_200_OK,
+)
+async def delete_document(
+    matter_id: int,
+    document_id: int,
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, Any]:
+    """Hard-delete one document: rows, evidence points, and blob originals."""
+    result = await purge_document(session, matter_id=matter_id, document_id=document_id)
+    if result is None:
+        # Absent OR belonging to another matter: cross-matter access is a
+        # hard boundary, so both read as "document not found".
+        raise HTTPException(*map_error(NotFoundError("document not found")))
+    return {
+        "status": "deleted",
+        "document_id": document_id,
+        "removed_points": result.removed_points,
+        "removed_files": result.removed_files,
+    }
 
 
 @router.post(

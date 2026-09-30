@@ -18,49 +18,76 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { createMatter, type Matter } from "@/lib/api";
+import { updateMatter, type Matter } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
-import { FolderPlus, MapPin, Briefcase, Globe } from "lucide-react";
-import { JURISDICTIONS, LANGUAGES, MATTER_TYPES } from "@/components/matter-options";
+import {
+  JURISDICTIONS,
+  LANGUAGES,
+  MATTER_TYPES,
+  withCurrentOption,
+} from "@/components/matter-options";
+import { FolderCog, MapPin, Briefcase, Globe } from "lucide-react";
 
-export function NewMatterModal({
+export function EditMatterModal({
   open,
   onOpenChange,
-  onMatterCreated,
+  matter,
+  onMatterUpdated,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onMatterCreated: (matter: Matter) => void;
+  matter: Matter | null;
+  onMatterUpdated: (matter: Matter) => void;
 }) {
-  const { t, language: currentAppLanguage } = useI18n();
+  const { t } = useI18n();
   const [title, setTitle] = React.useState("");
   const [jurisdiction, setJurisdiction] = React.useState("casablanca");
   const [matterType, setMatterType] = React.useState("labor");
-  const [language, setLanguage] = React.useState(currentAppLanguage);
+  const [language, setLanguage] = React.useState("ar");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    setLanguage(currentAppLanguage);
-  }, [currentAppLanguage]);
+    if (!open || !matter) return;
+    setTitle(matter.title);
+    setJurisdiction(matter.jurisdiction);
+    setMatterType(matter.matter_type);
+    setLanguage(matter.language);
+    setError(null);
+  }, [open, matter]);
+
+  const jurisdictionOptions = React.useMemo(
+    () =>
+      matter ? withCurrentOption(JURISDICTIONS, matter.jurisdiction) : JURISDICTIONS,
+    [matter],
+  );
+  const matterTypeOptions = React.useMemo(
+    () => (matter ? withCurrentOption(MATTER_TYPES, matter.matter_type) : MATTER_TYPES),
+    [matter],
+  );
+  const languageOptions = React.useMemo(
+    () => (matter ? withCurrentOption(LANGUAGES, matter.language) : LANGUAGES),
+    [matter],
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || busy) return;
+    if (!matter || busy) return;
+    const trimmedTitle = title.trim();
+    if (!trimmedTitle) return;
     setBusy(true);
     setError(null);
     try {
-      const created = await createMatter({
-        title: title.trim(),
-        jurisdiction,
+      const updated = await updateMatter(matter.id, {
+        title: trimmedTitle,
         matter_type: matterType,
+        jurisdiction,
         language,
       });
-      onMatterCreated(created);
+      onMatterUpdated(updated);
       onOpenChange(false);
-      setTitle("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Matter creation failed");
+      setError(err instanceof Error ? err.message : t.editMatterModal.errorFailed);
     } finally {
       setBusy(false);
     }
@@ -71,20 +98,21 @@ export function NewMatterModal({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-2 text-primary font-semibold text-base">
-            <FolderPlus className="h-5 w-5" />
-            <span>{t.newMatterModal.modalBadge}</span>
+            <FolderCog className="h-5 w-5" />
+            <span>{t.editMatterModal.modalBadge}</span>
           </div>
           <DialogTitle className="text-xl font-bold">
-            {t.newMatterModal.modalTitle}
+            {t.editMatterModal.modalTitle}
           </DialogTitle>
-          <DialogDescription>
-            {t.newMatterModal.modalDesc}
-          </DialogDescription>
+          <DialogDescription>{t.editMatterModal.modalDesc}</DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
           {error && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive font-medium">
+            <div
+              role="alert"
+              className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive font-medium"
+            >
               {error}
             </div>
           )}
@@ -110,10 +138,12 @@ export function NewMatterModal({
               </label>
               <Select value={matterType} onValueChange={setMatterType}>
                 <SelectTrigger>
-                  <SelectValue placeholder={t.newMatterModal.matterTypePlaceholder} />
+                  <SelectValue
+                    placeholder={t.newMatterModal.matterTypePlaceholder}
+                  />
                 </SelectTrigger>
                 <SelectContent>
-                  {MATTER_TYPES.map((type) => (
+                  {matterTypeOptions.map((type) => (
                     <SelectItem key={type.value} value={type.value}>
                       {type.label}
                     </SelectItem>
@@ -129,10 +159,12 @@ export function NewMatterModal({
               </label>
               <Select value={jurisdiction} onValueChange={setJurisdiction}>
                 <SelectTrigger>
-                  <SelectValue placeholder={t.newMatterModal.jurisdictionPlaceholder} />
+                  <SelectValue
+                    placeholder={t.newMatterModal.jurisdictionPlaceholder}
+                  />
                 </SelectTrigger>
                 <SelectContent>
-                  {JURISDICTIONS.map((j) => (
+                  {jurisdictionOptions.map((j) => (
                     <SelectItem key={j.value} value={j.value}>
                       {j.label}
                     </SelectItem>
@@ -147,12 +179,14 @@ export function NewMatterModal({
               <Globe className="h-3.5 w-3.5 text-muted-foreground" />
               <span>{t.newMatterModal.languageLabel}</span>
             </label>
-            <Select value={language} onValueChange={(val) => setLanguage(val as "ar" | "fr" | "en")}>
+            <Select value={language} onValueChange={setLanguage}>
               <SelectTrigger>
-                <SelectValue placeholder={t.newMatterModal.languagePlaceholder} />
+                <SelectValue
+                  placeholder={t.newMatterModal.languagePlaceholder}
+                />
               </SelectTrigger>
               <SelectContent>
-                {LANGUAGES.map((lang) => (
+                {languageOptions.map((lang) => (
                   <SelectItem key={lang.value} value={lang.value}>
                     {lang.label}
                   </SelectItem>
@@ -166,11 +200,12 @@ export function NewMatterModal({
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
+              disabled={busy}
             >
-              {t.newMatterModal.cancelButton}
+              {t.editMatterModal.cancelButton}
             </Button>
             <Button type="submit" disabled={busy || !title.trim()}>
-              {busy ? t.newMatterModal.creatingButton : t.newMatterModal.createButton}
+              {busy ? t.editMatterModal.savingButton : t.editMatterModal.saveButton}
             </Button>
           </DialogFooter>
         </form>

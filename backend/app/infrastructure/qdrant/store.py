@@ -15,6 +15,7 @@ source/version/article), never from the point id.
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 import uuid
@@ -24,6 +25,8 @@ from typing import Any
 
 from app.domain.search.schemas import AUTHORITY_COLLECTION, EVIDENCE_COLLECTION
 from app.infrastructure.qdrant import sparse as sparse_mod
+
+logger = logging.getLogger(__name__)
 
 DENSE_NAME: str = "dense"
 SPARSE_NAME: str = "lexical"
@@ -135,9 +138,7 @@ class QdrantStore:
                     client.create_collection(
                         collection_name=name,
                         vectors_config={
-                            DENSE_NAME: VectorParams(
-                                size=size, distance=Distance.COSINE
-                            )
+                            DENSE_NAME: VectorParams(size=size, distance=Distance.COSINE)
                         },
                         sparse_vectors_config={SPARSE_NAME: SparseVectorParams()},
                     )
@@ -159,6 +160,49 @@ class QdrantStore:
             if not client.collection_exists(collection):
                 return 0
             return client.count(collection_name=collection, exact=True).count
+        finally:
+            self._close(client)
+
+    def delete_evidence(self, *, matter_id: int, document_id: int | None = None) -> int:
+        """Delete evidence points by payload filter; return points removed.
+
+        Point ids are pipeline-derived (uuid5 of ``"{doc}:{section}"``), so
+        deletion filters on payload ``matter_id`` (and ``document_id`` when
+        given) — never on computed ids. Returns 0 without raising when the
+        collection does not exist yet (nothing to purge), and 0 when the
+        pre-delete count fails while still issuing the delete.
+        """
+        from qdrant_client.models import FieldCondition, Filter, FilterSelector, MatchValue
+
+        must: list[FieldCondition] = [
+            FieldCondition(key="matter_id", match=MatchValue(value=matter_id))
+        ]
+        if document_id is not None:
+            must.append(FieldCondition(key="document_id", match=MatchValue(value=document_id)))
+        query_filter = Filter(must=must)
+        selector = FilterSelector(filter=query_filter)
+        client = self._client()
+        try:
+            if not client.collection_exists(EVIDENCE_COLLECTION):
+                return 0
+            try:
+                before = int(
+                    client.count(
+                        collection_name=EVIDENCE_COLLECTION,
+                        count_filter=query_filter,
+                        exact=True,
+                    ).count
+                )
+            except Exception as exc:
+                # Count is best-effort: log it, still delete, report 0.
+                logger.warning("evidence pre-delete count failed: %s", exc)
+                before = 0
+            client.delete(
+                collection_name=EVIDENCE_COLLECTION,
+                points_selector=selector,
+                wait=True,
+            )
+            return before
         finally:
             self._close(client)
 
@@ -256,12 +300,8 @@ class QdrantStore:
                     expected=len(raw_ids),
                     actual=len(verified),
                 )
-            count_after = client.count(
-                collection_name=AUTHORITY_COLLECTION, exact=True
-            ).count
-            spot_checked = self._scroll_spot_check(
-                client, [_point_id(raw) for raw in raw_ids]
-            )
+            count_after = client.count(collection_name=AUTHORITY_COLLECTION, exact=True).count
+            spot_checked = self._scroll_spot_check(client, [_point_id(raw) for raw in raw_ids])
         finally:
             self._close(client)
         return IndexBatchResult(
@@ -397,9 +437,7 @@ class QdrantStore:
         query_filter = None
         if matter_id is not None:
             query_filter = Filter(
-                must=[
-                    FieldCondition(key="matter_id", match=MatchValue(value=matter_id))
-                ]
+                must=[FieldCondition(key="matter_id", match=MatchValue(value=matter_id))]
             )
         client = self._client()
         try:
@@ -423,8 +461,7 @@ class QdrantStore:
             self._close(client)
         fused = reciprocal_rank_fusion([dense_hits, sparse_hits], limit=limit)
         return [
-            {"payload": dict(p.payload or {}), "relevance": round(float(p.score), 6)}
-            for p in fused
+            {"payload": dict(p.payload or {}), "relevance": round(float(p.score), 6)} for p in fused
         ]
 
 

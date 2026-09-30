@@ -10,6 +10,8 @@
  * - GET  /api/v1/library/coverage
  * - GET/POST /api/v1/search (domain: matter|authority|both, separate lists)
  * - GET/POST /api/v1/matters (list/create)
+ * - GET/PATCH/DELETE /api/v1/matters/{id} (read/update/delete)
+ * - GET/DELETE /api/v1/matters/{id}/documents[/{documentId}] (list/delete)
  */
 
 export const API_BASE =
@@ -43,7 +45,13 @@ export type Citation = MatterCitation | AuthorityCitation;
 export type SseEvent =
   | { type: "citations"; citations: Citation[] }
   | { type: "token"; text: string }
-  | { type: "done"; not_found?: boolean; conversation_id?: number }
+  | {
+      type: "done";
+      not_found?: boolean;
+      conversation_id?: number;
+      /** Present only on the legal-only refusal path. */
+      out_of_scope?: boolean;
+    }
   | { type: "error"; code: string; detail: string; conversation_id?: number }
   | { type: "status"; stage: string; message: string };
 
@@ -68,7 +76,7 @@ export function parseSseLine(line: string): SseEvent | null {
  * Stream POST /api/v1/chat SSE events. Uses fetch + ReadableStream.
  */
 export async function* streamChat(
-  matterId: number,
+  matterId: number | null,
   content: string,
   opts: {
     conversationId?: number | null;
@@ -82,7 +90,7 @@ export async function* streamChat(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      matter_id: matterId,
+      matter_id: matterId ?? null,
       content,
       conversation_id: opts.conversationId ?? undefined,
       consent: opts.consent ?? false,
@@ -149,6 +157,21 @@ export interface MatterCreateInput {
   language?: string;
 }
 
+export interface MatterUpdateInput {
+  title?: string;
+  matter_type?: string;
+  jurisdiction?: string;
+  language?: string;
+}
+
+export interface MatterDeleteOut {
+  status: string;
+  id: number;
+  removed_documents: number;
+  removed_points: number;
+  removed_files: number;
+}
+
 export async function listMatters(): Promise<Matter[]> {
   const res = await fetch(`${API_BASE}/api/v1/matters`);
   if (!res.ok) throw new ApiError(res.status, await safeText(res));
@@ -168,6 +191,35 @@ export async function createMatter(input: MatterCreateInput): Promise<Matter> {
   });
   if (!res.ok) throw new ApiError(res.status, await safeText(res));
   return res.json() as Promise<Matter>;
+}
+
+export async function getMatter(matterId: number): Promise<Matter> {
+  const res = await fetch(`${API_BASE}/api/v1/matters/${matterId}`);
+  if (!res.ok) throw new ApiError(res.status, await safeText(res));
+  return res.json() as Promise<Matter>;
+}
+
+export async function updateMatter(
+  matterId: number,
+  patch: MatterUpdateInput,
+): Promise<Matter> {
+  const res = await fetch(`${API_BASE}/api/v1/matters/${matterId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new ApiError(res.status, await safeText(res));
+  return res.json() as Promise<Matter>;
+}
+
+export async function deleteMatter(
+  matterId: number,
+): Promise<MatterDeleteOut> {
+  const res = await fetch(`${API_BASE}/api/v1/matters/${matterId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new ApiError(res.status, await safeText(res));
+  return res.json();
 }
 
 /* ---------- Analysis helpers ---------- */
@@ -292,6 +344,48 @@ export interface UploadOut {
   indexed_count: number;
   error: string | null;
   sections?: DocumentSection[];
+}
+
+export interface DocumentDeleteOut {
+  status: string;
+  document_id: number;
+  removed_points: number;
+  removed_files: number;
+}
+
+export interface MatterDocument {
+  document_id: number;
+  original_name: string;
+  filename: string;
+  doc_type: string;
+  status: string;
+  needs_review: boolean;
+  chunk_count: number;
+  section_count: number;
+  /** null when the document has no sections. */
+  page_count: number | null;
+  /** ISO datetime. */
+  created_at: string;
+}
+
+export async function listMatterDocuments(
+  matterId: number,
+): Promise<MatterDocument[]> {
+  const res = await fetch(`${API_BASE}/api/v1/matters/${matterId}/documents`);
+  if (!res.ok) throw new ApiError(res.status, await safeText(res));
+  return res.json() as Promise<MatterDocument[]>;
+}
+
+export async function deleteMatterDocument(
+  matterId: number,
+  documentId: number,
+): Promise<DocumentDeleteOut> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/matters/${matterId}/documents/${documentId}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) throw new ApiError(res.status, await safeText(res));
+  return res.json();
 }
 
 export async function uploadDocument(
@@ -545,7 +639,7 @@ export interface MessageRecord {
 
 export interface ConversationSummary {
   id: number;
-  matter_id: number;
+  matter_id: number | null;
   matter_title?: string | null;
   title: string;
   created_at: string;
@@ -555,7 +649,7 @@ export interface ConversationSummary {
 
 export interface ConversationDetail {
   id: number;
-  matter_id: number;
+  matter_id: number | null;
   matter_title?: string | null;
   title: string;
   created_at: string;

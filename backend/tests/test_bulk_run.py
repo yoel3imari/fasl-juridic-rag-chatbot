@@ -284,15 +284,9 @@ def _args(tmp_path: Path, **over) -> argparse.Namespace:
     return argparse.Namespace(**base)
 
 
-def _write_gates(
-    tmp_path: Path, gate: dict | None = None, parity: dict | None = None
-) -> None:
-    (tmp_path / "gate.json").write_text(
-        json.dumps(gate or _good_gate()), encoding="utf-8"
-    )
-    (tmp_path / "parity.json").write_text(
-        json.dumps(parity or _good_parity()), encoding="utf-8"
-    )
+def _write_gates(tmp_path: Path, gate: dict | None = None, parity: dict | None = None) -> None:
+    (tmp_path / "gate.json").write_text(json.dumps(gate or _good_gate()), encoding="utf-8")
+    (tmp_path / "parity.json").write_text(json.dumps(parity or _good_parity()), encoding="utf-8")
 
 
 class _FakeEmbedder:
@@ -431,9 +425,7 @@ def test_embed_prefilter_never_sends_overlong(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Given: served_estimate flags chunk 1 as overlong
-    monkeypatch.setattr(
-        bulk_run, "_served_estimate", lambda t: 999 if "KILLER" in t else 10
-    )
+    monkeypatch.setattr(bulk_run, "_served_estimate", lambda t: 999 if "KILLER" in t else 10)
     monkeypatch.setattr(bulk_run, "_served_safe_tokens", lambda: 500)
     engine = asyncio.run(_mkdb(_db_url(tmp_path)))
     maker = async_sessionmaker(engine, expire_on_commit=False)
@@ -472,15 +464,84 @@ def test_embed_prefilter_never_sends_overlong(
     async def _check() -> None:
         async with maker() as s:
             rows = (
-                (
-                    await s.execute(
-                        sa.select(LibraryImportChunk).order_by(LibraryImportChunk.ord)
-                    )
-                )
+                (await s.execute(sa.select(LibraryImportChunk).order_by(LibraryImportChunk.ord)))
                 .scalars()
                 .all()
             )
             assert [c.status for c in rows] == ["embedded", "failed"]
+
+    asyncio.run(_check())
+    asyncio.run(engine.dispose())
+
+
+def test_embed_isolates_transport_killer_and_continues(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Given: the estimate passes everything but the server drops the
+    # connection on the batch AND on the killer single (crash-loop).
+    import httpx
+
+    monkeypatch.setattr(bulk_run, "_served_estimate", lambda t: 10)
+    monkeypatch.setattr(bulk_run, "_served_safe_tokens", lambda: 500)
+    monkeypatch.setattr(bulk_run, "_ISOLATED_RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(bulk_run, "_ISOLATED_SINGLE_RETRIES", 1)
+    engine = asyncio.run(_mkdb(_db_url(tmp_path)))
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def _seed() -> int:
+        async with maker() as s:
+            row = await _seed_file(s, tmp_path, "cat/b.pdf", n=3)
+            adir = tmp_path / "art"
+            from app.cli.library.artifacts import artifact_path_for, write_artifact
+
+            recs = [
+                _rec(0, row.sha256, text="good zero"),
+                _rec(1, row.sha256, text="KILLER crash"),
+                _rec(2, row.sha256, text="good two"),
+            ]
+            write_artifact(iter(recs), artifact_path_for(adir, row.sha256))
+            from app.cli.library.artifacts import sha256_file as _sha
+
+            row.artifact_sha256 = _sha(artifact_path_for(adir, row.sha256))
+            await s.commit()
+            return int(row.id)
+
+    fid = asyncio.run(_seed())
+
+    class _FlakyEmbedder:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def embed_sync(self, texts: list[str]) -> list[list[float]]:
+            self.calls += 1
+            if len(texts) > 1 or any("KILLER" in t for t in texts):
+                raise httpx.TransportError("server disconnected")
+            return [[0.1] * DIM for _ in texts]
+
+    fake = _FlakyEmbedder()
+
+    async def _go() -> dict:
+        async with maker() as s:
+            return await ensure_embed(
+                s, [fid], artifact_dir=str(tmp_path / "art"), embedder=fake, dim=DIM
+            )
+
+    report = asyncio.run(_go())
+    # Then: killer isolated as failed, survivors embedded, run continues.
+    assert report["chunks_embedded"] == 2
+    assert report["chunks_failed_transport"] == 1
+    assert len(report["transport_failed_ids"]) == 1
+
+    async def _check() -> None:
+        async with maker() as s:
+            rows = (
+                (await s.execute(sa.select(LibraryImportChunk).order_by(LibraryImportChunk.ord)))
+                .scalars()
+                .all()
+            )
+            assert [c.status for c in rows] == ["embedded", "failed", "embedded"]
+            files = (await s.execute(sa.select(LibraryImportFile))).scalars().all()
+            assert files[0].embed_status == "embedded"
 
     asyncio.run(_check())
     asyncio.run(engine.dispose())
@@ -521,20 +582,14 @@ def test_index_marks_only_verified_ids_on_reconciliation_error(
     async def _go() -> None:
         async with maker() as s:
             with pytest.raises(RunFailed, match="reconciliation failed"):
-                await ensure_index(
-                    s, [fid], artifact_dir=str(tmp_path / "art"), store=store
-                )
+                await ensure_index(s, [fid], artifact_dir=str(tmp_path / "art"), store=store)
 
     asyncio.run(_go())
 
     async def _check() -> None:
         async with maker() as s:
             rows = (
-                (
-                    await s.execute(
-                        sa.select(LibraryImportChunk).order_by(LibraryImportChunk.ord)
-                    )
-                )
+                (await s.execute(sa.select(LibraryImportChunk).order_by(LibraryImportChunk.ord)))
                 .scalars()
                 .all()
             )
@@ -550,9 +605,7 @@ def test_index_marks_only_verified_ids_on_reconciliation_error(
 # --- resume: finished work is never re-driven ------------------------------------------
 
 
-def test_second_run_is_noop_no_reembed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_second_run_is_noop_no_reembed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(bulk_run, "_served_estimate", lambda t: 10)
     monkeypatch.setattr(bulk_run, "_served_safe_tokens", lambda: 500)
     engine = asyncio.run(_mkdb(_db_url(tmp_path)))
@@ -572,9 +625,7 @@ def test_second_run_is_noop_no_reembed(
             e = await ensure_embed(
                 s, [fid], artifact_dir=str(tmp_path / "art"), embedder=fake, dim=DIM
             )
-            i = await ensure_index(
-                s, [fid], artifact_dir=str(tmp_path / "art"), store=store
-            )
+            i = await ensure_index(s, [fid], artifact_dir=str(tmp_path / "art"), store=store)
             return e, i
 
     e1, i1 = asyncio.run(_once())
@@ -671,13 +722,7 @@ def test_scope_is_deterministic_path_order(tmp_path: Path) -> None:
     async def _names() -> list[str]:
         async with maker() as s:
             rows = (
-                (
-                    await s.execute(
-                        sa.select(LibraryImportFile).where(
-                            LibraryImportFile.id.in_(ids)
-                        )
-                    )
-                )
+                (await s.execute(sa.select(LibraryImportFile).where(LibraryImportFile.id.in_(ids))))
                 .scalars()
                 .all()
             )

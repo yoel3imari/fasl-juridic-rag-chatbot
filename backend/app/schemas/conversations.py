@@ -23,7 +23,7 @@ class ConversationOut(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     id: int
-    matter_id: int
+    matter_id: int | None
     matter_title: str | None = None
     title: str
     created_at: datetime
@@ -35,7 +35,7 @@ class ConversationDetailOut(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     id: int
-    matter_id: int
+    matter_id: int | None
     matter_title: str | None = None
     title: str
     created_at: datetime

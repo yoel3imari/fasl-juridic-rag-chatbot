@@ -39,6 +39,7 @@ interface Message {
   text: string;
   citations: Citation[];
   notFound?: boolean;
+  outOfScope?: boolean;
   error?: string;
 }
 
@@ -203,10 +204,6 @@ export function Chat({
     async (overrideText?: string) => {
       const content = (overrideText ?? input).trim();
       if (!content || busy) return;
-      if (matterId === null) {
-        setToast(t.chat.errorSelectMatter);
-        return;
-      }
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
@@ -220,6 +217,7 @@ export function Chat({
       let text = "";
       let error: string | undefined;
       let notFound = false;
+      let outOfScope = false;
 
       const apply = () =>
         setMessages((m) => {
@@ -229,6 +227,7 @@ export function Chat({
             text,
             citations,
             notFound,
+            outOfScope,
             error,
           };
           return next;
@@ -244,6 +243,7 @@ export function Chat({
         else if (ev.type === "token") text += ev.text;
         else if (ev.type === "done") {
           notFound = ev.not_found ?? false;
+          outOfScope = ev.out_of_scope ?? false;
           setActivity(null);
           if (ev.conversation_id) {
             onConversationChange?.(ev.conversation_id);
@@ -420,7 +420,7 @@ export function Chat({
                   key={idx}
                   type="button"
                   onClick={() => void send(prompt)}
-                  disabled={busy || matterId === null}
+                  disabled={busy}
                   className="group flex items-center justify-between rounded-xl border border-border/60 bg-background/50 hover:bg-muted/60 hover:border-border p-3 text-start text-xs text-foreground transition-all cursor-pointer disabled:opacity-50 shadow-2xs"
                 >
                   <span className="leading-relaxed">{prompt}</span>
@@ -485,6 +485,13 @@ export function Chat({
                 {m.notFound && (
                   <p className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">
                     {t.chat.provisionalDisclaimer}
+                  </p>
+                )}
+
+                {/* Scope notice when the question was refused as out of scope */}
+                {m.outOfScope && (
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">
+                    {t.chat.outOfScopeNotice}
                   </p>
                 )}
 
@@ -567,7 +574,7 @@ export function Chat({
               <Button
                 type="submit"
                 size="icon"
-                disabled={!input.trim() || matterId === null}
+                disabled={!input.trim()}
                 className="h-8 w-8 rounded-lg shadow-2xs bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-30 transition-all"
               >
                 <Send className="h-3.5 w-3.5" />

@@ -2,12 +2,13 @@
 
 Why this file exists
 --------------------
-Plan todo 5. `app/api/v1/chat.py` has **four** near-identical SSE generators
-(`_gen_failed`, `_gen_direct_agent`, `_gen_empty`, `_gen`), and they do NOT emit
-the same frame sequence. A test that only asserts the documented contract
-("citations -> token* -> done") would stay green while todo 31 collapses the
-four generators into one builder and drops, duplicates or reorders a `status`
-frame. These tests therefore pin, per path:
+Plan todo 5. `app/api/v1/chat.py` has **five** near-identical SSE generators
+(`_gen_failed`, `_gen_direct_agent`, `_gen_empty`, `_gen`, plus the inline
+`out_of_scope` short-circuit), and they do NOT emit the same frame sequence. A
+test that only asserts the documented contract ("citations -> token* -> done")
+would stay green while todo 31 collapses the five generators into one builder
+and drops, duplicates or reorders a `status` frame. These tests therefore pin,
+per path:
 
   * the **ordered list of frame `type` values** (not a subsequence),
   * the **full key set of the `done` frame**,
@@ -44,13 +45,16 @@ TOKEN = "token"
 DONE = "done"
 ERROR = "error"
 
-# The four contractual frame sequences. `*` is expanded by _types() so the
+# The five contractual frame sequences. `*` is expanded by _types() so the
 # token count stays asserted while the token text itself is not frozen here.
 EXPECTED_FAILED_NO_ROUNDS: list[str] = [STATUS, CITATIONS, ERROR]
 EXPECTED_FAILED_AFTER_ROUNDS: list[str] = [STATUS, STATUS, CITATIONS, ERROR]
 EXPECTED_DIRECT_AGENT: list[str] = [STATUS, CITATIONS, TOKEN, TOKEN, DONE]
 EXPECTED_EMPTY: list[str] = [STATUS, STATUS, CITATIONS, TOKEN, TOKEN, DONE]
 EXPECTED_FULL: list[str] = [STATUS, STATUS, STATUS, CITATIONS, TOKEN, TOKEN, DONE]
+# Intent-gate refusal: statuses=_frames("classifying") + citations + the
+# refusal split into two token frames by _halved_tokens() + done.
+EXPECTED_OUT_OF_SCOPE: list[str] = [STATUS, CITATIONS, TOKEN, TOKEN, DONE]
 
 
 # --------------------------------------------------------------------------- #
@@ -90,7 +94,11 @@ def _authority_hit() -> dict[str, Any]:
 
 
 class _FakeEmbedder:
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+
     async def embed(self, texts: list[str]) -> list[list[float]]:
+        self.calls.append(list(texts))
         return [[1.0, 0.0, 0.0, 0.0] for _ in texts]
 
 
@@ -98,6 +106,9 @@ class _FakeStore:
     def __init__(self, matter_hits: list[dict], authority_hits: list[dict]) -> None:
         self.matter_hits = matter_hits
         self.authority_hits = authority_hits
+        # (collection, matter_id) of every hybrid_query — lets a test prove
+        # the intent gate performed ZERO retrieval, not merely empty retrieval.
+        self.calls: list[tuple[str, int | None]] = []
 
     def hybrid_query(
         self,
@@ -107,6 +118,7 @@ class _FakeStore:
         limit: int,
         matter_id: int | None = None,
     ) -> list[dict[str, Any]]:
+        self.calls.append((collection, matter_id))
         if collection == EVIDENCE_COLLECTION:
             return self.matter_hits[:limit]
         assert collection == AUTHORITY_COLLECTION
@@ -453,6 +465,55 @@ def test_citations_precede_every_token_on_happy_paths(
     types = _types(_events(resp))
     assert CITATIONS in types, label
     assert types.index(CITATIONS) < types.index(TOKEN), (label, types)
+
+
+# --------------------------------------------------------------------------- #
+# path 6 — the inline out_of_scope short-circuit (intent-gate refusal)
+# --------------------------------------------------------------------------- #
+def test_out_of_scope_frame_sequence(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Refusal emits exactly: 1 status, citations, 2 tokens, done."""
+    agent = _ScriptedAgent(script=[[_envelope("out_of_scope", "pizza recipe")]])
+    _wire(monkeypatch, _FakeStore([], []), agent)
+    resp = _post(client, content="pizza recipe")
+    assert resp.status_code == 200, resp.text
+    events = _events(resp)
+    assert _types(events) == EXPECTED_OUT_OF_SCOPE
+    assert [s["stage"] for s in events if s["type"] == STATUS] == ["classifying"]
+
+
+def test_out_of_scope_done_payload_keys(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`done` on this path carries the extra `out_of_scope: True` key."""
+    agent = _ScriptedAgent(script=[[_envelope("out_of_scope", "pizza recipe")]])
+    _wire(monkeypatch, _FakeStore([], []), agent)
+    resp = _post(client, content="pizza recipe")
+    done = next(e for e in _events(resp) if e["type"] == DONE)
+    assert set(done) == {"type", "not_found", "conversation_id", "out_of_scope"}
+    assert done["out_of_scope"] is True
+    assert done["not_found"] is False
+
+
+def test_out_of_scope_tokens_and_zero_retrieval(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Refusal text is OUT_OF_SCOPE_REPLY and no embed/store call ever runs."""
+    from app.domain.prompts import OUT_OF_SCOPE_REPLY
+
+    store = _FakeStore([], [])
+    agent = _ScriptedAgent(script=[[_envelope("out_of_scope", "pizza recipe")]])
+    _wire(monkeypatch, store, agent)
+    # _wire installs its own embedder; swap in a recording one afterwards so
+    # "zero embedder calls" is asserted rather than assumed.
+    embedder = _FakeEmbedder()
+    monkeypatch.setattr(deps_mod, "get_embedder", lambda: embedder)
+
+    resp = _post(client, content="pizza recipe")
+    assert resp.status_code == 200, resp.text
+    events = _events(resp)
+    assert "".join(e["text"] for e in events if e["type"] == TOKEN) == OUT_OF_SCOPE_REPLY
+    assert embedder.calls == []
+    assert store.calls == []
 
 
 # --------------------------------------------------------------------------- #

@@ -88,9 +88,7 @@ class _FakeStore:
         exc: Exception | None = None,
     ) -> None:
         self.matter_hits = matter_hits if matter_hits is not None else [_matter_hit()]
-        self.authority_hits = (
-            authority_hits if authority_hits is not None else [_authority_hit()]
-        )
+        self.authority_hits = authority_hits if authority_hits is not None else [_authority_hit()]
         self.exc = exc
         self.seen_matter_ids: list[int | None] = []
 
@@ -153,9 +151,7 @@ class _FakeAgent:
         script: list[list[str]] | None = None,
     ) -> None:
         self.calls: list[str] = []
-        self.chunks = (
-            chunks if chunks is not None else ["FACT: synthetic. RULE: synthetic."]
-        )
+        self.chunks = chunks if chunks is not None else ["FACT: synthetic. RULE: synthetic."]
         self.script = script
 
     def run_stream(self, prompt: str) -> _FakeStream:
@@ -167,9 +163,7 @@ class _FakeAgent:
 
 def _retrieval_agent(final: list[str] | None = None) -> _FakeAgent:
     """Fake that requests retrieval (search_both envelope) then answers."""
-    return _FakeAgent(
-        script=[[_tool_envelope()], final or ["FACT: synthetic. RULE: synthetic."]]
-    )
+    return _FakeAgent(script=[[_tool_envelope()], final or ["FACT: synthetic. RULE: synthetic."]])
 
 
 @pytest.fixture()
@@ -254,9 +248,7 @@ def test_claims_carry_domain_labels(
     store = _FakeStore()
     agent = _retrieval_agent()
     _wire(monkeypatch, store, _FakeEmbedder(), agent)
-    resp = client.post(
-        "/api/v1/chat", json={"matter_id": MATTER_ID, "content": "conge annuel"}
-    )
+    resp = client.post("/api/v1/chat", json={"matter_id": MATTER_ID, "content": "conge annuel"})
     assert resp.status_code == 200, resp.text
     events = _events(resp)
     cites = next(e for e in events if e["type"] == "citations")["citations"]
@@ -292,14 +284,10 @@ def test_claims_carry_domain_labels(
             assert cite["edition"] == "ar-general"
 
 
-def test_citations_before_tokens(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_citations_before_tokens(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """The citations event MUST precede the first token event in the stream."""
     _wire(monkeypatch, _FakeStore(), _FakeEmbedder(), _retrieval_agent())
-    resp = client.post(
-        "/api/v1/chat", json={"matter_id": MATTER_ID, "content": "conge annuel"}
-    )
+    resp = client.post("/api/v1/chat", json={"matter_id": MATTER_ID, "content": "conge annuel"})
     assert resp.status_code == 200, resp.text
     events = _events(resp)
     kinds_no_status = [e["type"] for e in events if e["type"] != "status"]
@@ -320,9 +308,7 @@ def test_provisional_not_found_on_unrelated_query(
     store = _FakeStore(matter_hits=[], authority_hits=[])
     agent = _retrieval_agent()
     _wire(monkeypatch, store, _FakeEmbedder(), agent)
-    resp = client.post(
-        "/api/v1/chat", json={"matter_id": MATTER_ID, "content": "unrelated zebras"}
-    )
+    resp = client.post("/api/v1/chat", json={"matter_id": MATTER_ID, "content": "unrelated zebras"})
     assert resp.status_code == 200, resp.text
     events = _events(resp)
     first_cites = next(e for e in events if e["type"] == "citations")
@@ -333,8 +319,7 @@ def test_provisional_not_found_on_unrelated_query(
     assert "don't know" in body.lower()
     assert agent.calls != [], "decision round must run before emptiness is known"
     assert all(
-        "[matter evidence]" not in c and "[legal authorities]" not in c
-        for c in agent.calls
+        "[matter evidence]" not in c and "[legal authorities]" not in c for c in agent.calls
     ), "no grounded generation on empty context"
 
 
@@ -344,9 +329,7 @@ def test_empty_context_never_hallucinates(
     """Empty matter + empty authority → no invented articles, sections, or spans."""
     store = _FakeStore(matter_hits=[], authority_hits=[])
     _wire(monkeypatch, store, _FakeEmbedder(), _retrieval_agent())
-    resp = client.post(
-        "/api/v1/chat", json={"matter_id": MATTER_ID, "content": "anything at all"}
-    )
+    resp = client.post("/api/v1/chat", json={"matter_id": MATTER_ID, "content": "anything at all"})
     assert resp.status_code == 200, resp.text
     events = _events(resp)
     body = " ".join(e.get("text", "") for e in events if e["type"] == "token")
@@ -354,22 +337,16 @@ def test_empty_context_never_hallucinates(
         assert invented not in body, f"hallucinated content: {invented}"
 
 
-def test_qdrant_error_returns_500(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_qdrant_error_returns_500(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """Store failure → 500 with a message (plan acceptance)."""
     store = _FakeStore(exc=RuntimeError("qdrant boom"))
     _wire(monkeypatch, store, _FakeEmbedder(), _retrieval_agent())
-    resp = client.post(
-        "/api/v1/chat", json={"matter_id": MATTER_ID, "content": "conge annuel"}
-    )
+    resp = client.post("/api/v1/chat", json={"matter_id": MATTER_ID, "content": "conge annuel"})
     assert resp.status_code == 500
     assert "qdrant boom" in resp.text.lower() or "store" in resp.text.lower()
 
 
-def test_embedding_failure_returns_503(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_embedding_failure_returns_503(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """CrispEmbed failure → 503."""
     _wire(
         monkeypatch,
@@ -377,9 +354,7 @@ def test_embedding_failure_returns_503(
         _FakeEmbedder(exc=RuntimeError("crispembed down")),
         _retrieval_agent(),
     )
-    resp = client.post(
-        "/api/v1/chat", json={"matter_id": MATTER_ID, "content": "conge annuel"}
-    )
+    resp = client.post("/api/v1/chat", json={"matter_id": MATTER_ID, "content": "conge annuel"})
     assert resp.status_code == 503
 
 
@@ -393,9 +368,7 @@ def test_messages_persisted_with_matching_citations(
         _FakeEmbedder(),
         _retrieval_agent(["hello world"]),
     )
-    resp = client.post(
-        "/api/v1/chat", json={"matter_id": MATTER_ID, "content": "conge annuel"}
-    )
+    resp = client.post("/api/v1/chat", json={"matter_id": MATTER_ID, "content": "conge annuel"})
     assert resp.status_code == 200, resp.text
     events = _events(resp)
     emitted = next(e for e in events if e["type"] == "citations")["citations"]
@@ -404,11 +377,7 @@ def test_messages_persisted_with_matching_citations(
         async with db_session_factory() as sess:
             convs = (await sess.execute(select(Conversation))).scalars().all()
             assert len(convs) == 1 and convs[0].matter_id == MATTER_ID
-            msgs = (
-                (await sess.execute(select(Message).order_by(Message.id)))
-                .scalars()
-                .all()
-            )
+            msgs = (await sess.execute(select(Message).order_by(Message.id))).scalars().all()
             roles = [m.role for m in msgs]
             assert roles == ["user", "assistant"]
             assert msgs[1].content == "hello world"
@@ -431,34 +400,28 @@ def test_strict_privacy_blocks_external_with_matter_evidence(
     monkeypatch.setenv("LLM_PROVIDER", "openai")
     agent = _retrieval_agent()
     _wire(monkeypatch, _FakeStore(), _FakeEmbedder(), agent)
-    resp = client.post(
-        "/api/v1/chat", json={"matter_id": MATTER_ID, "content": "conge annuel"}
-    )
+    resp = client.post("/api/v1/chat", json={"matter_id": MATTER_ID, "content": "conge annuel"})
     assert resp.status_code == 403
     assert all(
-        "[matter evidence]" not in c and "[legal authorities]" not in c
-        for c in agent.calls
+        "[matter evidence]" not in c and "[legal authorities]" not in c for c in agent.calls
     ), "matter evidence must never reach an external provider"
 
 
-def test_greeting_bypasses_retrieval(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_greeting_bypasses_retrieval(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """Greeting is an LLM direct answer: zero embed/store calls, done found."""
     store = _FakeStore(matter_hits=[], authority_hits=[])
     embedder = _FakeEmbedder()
-    agent = _FakeAgent(
-        chunks=["Hello and welcome! I am your FASL legal assistant today."]
-    )
+    agent = _FakeAgent(chunks=["Hello and welcome! I am your FASL legal assistant today."])
     _wire(monkeypatch, store, embedder, agent)
-    resp = client.post(
-        "/api/v1/chat", json={"matter_id": MATTER_ID, "content": "salam"}
-    )
+    resp = client.post("/api/v1/chat", json={"matter_id": MATTER_ID, "content": "salam"})
     assert resp.status_code == 200, resp.text
     events = _events(resp)
     assert embedder.calls == []
     assert store.seen_matter_ids == []
-    assert len(agent.calls) == 1, "single decision round, no tool follow-up"
+    # A round-1 greeting is answered in prose, so it is never classified as an
+    # `out_of_scope` envelope — a second, constrained classification call runs
+    # to enforce the intent gate before that prose may become the answer.
+    assert len(agent.calls) == 2, "decision round + enforcement classification"
     cites = next(e for e in events if e["type"] == "citations")
     assert cites["citations"] == []
     done = next(e for e in events if e["type"] == "done")
@@ -467,14 +430,10 @@ def test_greeting_bypasses_retrieval(
     assert "fasl" in body.lower()
 
 
-def test_status_events_emitted(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_status_events_emitted(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """Retrieval path emits classifying + searching status events."""
     _wire(monkeypatch, _FakeStore(), _FakeEmbedder(), _retrieval_agent())
-    resp = client.post(
-        "/api/v1/chat", json={"matter_id": MATTER_ID, "content": "conge annuel"}
-    )
+    resp = client.post("/api/v1/chat", json={"matter_id": MATTER_ID, "content": "conge annuel"})
     assert resp.status_code == 200, resp.text
     events = _events(resp)
     stages = {e["stage"] for e in events if e["type"] == "status"}
@@ -509,11 +468,7 @@ def test_direct_answer_makes_zero_tool_calls(
 
     async def _read():
         async with db_session_factory() as sess:
-            msgs = (
-                (await sess.execute(select(Message).order_by(Message.id)))
-                .scalars()
-                .all()
-            )
+            msgs = (await sess.execute(select(Message).order_by(Message.id))).scalars().all()
             assert [m.role for m in msgs] == ["user", "assistant"]
             assert msgs[1].content == "Happy to help — ask me any legal question."
             assert msgs[1].citations_json == []
@@ -531,9 +486,7 @@ def test_retrieval_path_calls_tool_and_grounds(
     embedder = _FakeEmbedder()
     agent = _retrieval_agent(["Grounded synthetic answer."])
     _wire(monkeypatch, store, embedder, agent)
-    resp = client.post(
-        "/api/v1/chat", json={"matter_id": MATTER_ID, "content": "conge annuel"}
-    )
+    resp = client.post("/api/v1/chat", json={"matter_id": MATTER_ID, "content": "conge annuel"})
     assert resp.status_code == 200, resp.text
     events = _events(resp)
     assert embedder.calls != [], "retrieval path must call the tool (embed)"
@@ -564,9 +517,7 @@ def test_tool_loop_caps_at_three_rounds(
         ]
     )
     _wire(monkeypatch, store, embedder, agent)
-    resp = client.post(
-        "/api/v1/chat", json={"matter_id": MATTER_ID, "content": "conge annuel"}
-    )
+    resp = client.post("/api/v1/chat", json={"matter_id": MATTER_ID, "content": "conge annuel"})
     assert resp.status_code == 200, resp.text
     events = _events(resp)
     # search_both embeds once per domain → 2 embeds per tool round.

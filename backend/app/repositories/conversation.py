@@ -28,7 +28,7 @@ class ConversationSummary(NamedTuple):
     """One row of the conversation list, with its preview already resolved."""
 
     id: int
-    matter_id: int
+    matter_id: int | None
     title: str
     created_at: datetime
     matter_title: str | None

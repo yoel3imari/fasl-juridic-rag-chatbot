@@ -212,7 +212,7 @@ class ChatIn(BaseModel):
 class RagChatIn(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    matter_id: int
+    matter_id: int | None = None
     content: str = Field(min_length=1)
     conversation_id: int | None = None
     consent: bool = False

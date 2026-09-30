@@ -23,6 +23,12 @@ PROVISIONAL_NOT_FOUND: str = (
     "from dates alone."
 )
 
+OUT_OF_SCOPE_REPLY: str = (
+    "I'm FASL, a legal assistant for the Moroccan legal system, so I can only "
+    "help with questions about Moroccan law. Go ahead and ask me a legal "
+    "question about your case, a statute, or any matter of Moroccan law."
+)
+
 
 def _matter_tag(item: dict[str, Any]) -> str:
     return (

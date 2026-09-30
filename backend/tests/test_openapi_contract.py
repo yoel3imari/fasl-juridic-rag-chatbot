@@ -351,6 +351,46 @@ def test_delete_conversation_returns_bare_dict(client: TestClient, db_session_fa
             "matter not found",
             {},
         ),
+        # matters.py — matter CRUD 404s (GET/PATCH/DELETE one matter).
+        # All four raise BEFORE any purge, so no purger seam is needed here.
+        (
+            "GET",
+            "/api/v1/matters/999999",
+            404,
+            "matter not found",
+            None,
+        ),
+        (
+            "PATCH",
+            "/api/v1/matters/999999",
+            404,
+            "matter not found",
+            {},
+        ),
+        (
+            "DELETE",
+            "/api/v1/matters/999999",
+            404,
+            "matter not found",
+            {},
+        ),
+        # documents.py — document lifecycle 404s: a missing matter on the list,
+        # and a document that is absent OR belongs to another matter (cross-matter
+        # access is a hard boundary; both read as "document not found").
+        (
+            "GET",
+            "/api/v1/matters/999999/documents",
+            404,
+            "matter not found",
+            None,
+        ),
+        (
+            "DELETE",
+            "/api/v1/matters/999999/documents/999999",
+            404,
+            "document not found",
+            {},
+        ),
         # search.py:47 — matter-domain search without matter_id.
         (
             "POST",
