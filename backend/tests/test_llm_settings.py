@@ -285,3 +285,61 @@ def test_chat_remembers_last_used(
     stored = settings_store.load_llm_settings()
     assert stored["provider"] == "openai"
     assert stored["model"] == "gpt-4o-mini"
+
+
+def test_put_and_get_llm_settings_base_urls(isolated_storage) -> None:
+    client = TestClient(app)
+    resp = client.put(
+        "/api/v1/settings/llm",
+        json={
+            "provider": "groq",
+            "model": "llama-3.3-70b-versatile",
+            "base_urls": {
+                "groq": "https://api.groq.com/openai/v1",
+            },
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["current_provider"] == "groq"
+    assert data["current_model"] == "llama-3.3-70b-versatile"
+    assert data["base_urls"]["groq"] == "https://api.groq.com/openai/v1"
+
+    # Verify GET also returns base_urls
+    get_resp = client.get("/api/v1/settings/llm")
+    assert get_resp.status_code == 200
+    assert get_resp.json()["base_urls"]["groq"] == "https://api.groq.com/openai/v1"
+
+
+def test_post_llm_test_connection_invalid_provider(isolated_storage) -> None:
+    client = TestClient(app)
+    resp = client.post(
+        "/api/v1/settings/llm/test",
+        json={"provider": "invalid_provider", "model": "any-model"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["success"] is False
+    assert "Unknown provider" in data["message"]
+
+
+def test_post_llm_test_connection_mocked(isolated_storage, respx_mock) -> None:
+    respx_mock.get("https://api.groq.com/openai/v1/models").respond(
+        status_code=200, json={"data": [{"id": "llama-3.3-70b-versatile"}]}
+    )
+    client = TestClient(app)
+    resp = client.post(
+        "/api/v1/settings/llm/test",
+        json={
+            "provider": "groq",
+            "model": "llama-3.3-70b-versatile",
+            "base_url": "https://api.groq.com/openai/v1",
+            "api_key": "gsk_test123",
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["success"] is True
+    assert "Connected successfully" in data["message"]
+    assert data["latency_ms"] is not None
+

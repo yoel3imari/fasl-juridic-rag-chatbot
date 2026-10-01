@@ -108,9 +108,9 @@ def _privacy_http(
 
 
 _STATUS_MESSAGES: dict[str, str] = {
-    "classifying": "Classifying query",
-    "searching": "Searching matter + authority",
-    "thinking": "Thinking with context",
+    "classifying": "Classifying...",
+    "searching": "Searching...",
+    "thinking": "Thinking...",
 }
 
 

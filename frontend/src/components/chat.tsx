@@ -13,6 +13,7 @@ import {
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { CitationDomainBadge } from "./citation-domain-badge";
+import { MarkdownRenderer } from "./markdown-renderer";
 import { ModelSwitcherModal } from "./model-switcher-modal";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -23,7 +24,6 @@ import {
   AlertCircle,
   AlertTriangle,
   Scale,
-  RefreshCw,
   Copy,
   Check,
   ChevronDown,
@@ -31,6 +31,7 @@ import {
   Cloud,
   MessageSquare,
   Plus,
+  ArrowRightIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -78,6 +79,8 @@ export function Chat({
   const [keysStatus, setKeysStatus] = useState<Record<string, boolean> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const activeConvIdRef = useRef<number | null>(conversationId ?? null);
+  const prevConvIdRef = useRef<number | null>(conversationId ?? null);
 
   // Load LLM settings
   useEffect(() => {
@@ -128,7 +131,25 @@ export function Chat({
   // Load past conversation messages when conversationId changes
   useEffect(() => {
     let cancelled = false;
+    const prevId = prevConvIdRef.current;
+    prevConvIdRef.current = conversationId ?? null;
+
+    // If conversationId didn't actually change, do nothing
+    if (prevId === (conversationId ?? null)) {
+      return;
+    }
+
+    // If this change was from the current active stream establishing the conversation, do not reload
+    if (
+      conversationId !== null &&
+      conversationId !== undefined &&
+      activeConvIdRef.current === conversationId
+    ) {
+      return;
+    }
+
     if (conversationId !== null && conversationId !== undefined) {
+      activeConvIdRef.current = conversationId;
       getConversation(conversationId)
         .then((detail) => {
           if (cancelled) return;
@@ -136,6 +157,10 @@ export function Chat({
             role: m.role as "user" | "assistant",
             text: m.content,
             citations: (m.citations_json as Citation[]) || [],
+            error:
+              m.role === "assistant" && !m.content
+                ? t.chat.errorNetwork
+                : undefined,
           }));
           setMessages(loaded);
           setActivity(null);
@@ -149,13 +174,14 @@ export function Chat({
           );
         });
     } else {
+      activeConvIdRef.current = null;
       setMessages([]);
       setActivity(null);
     }
     return () => {
       cancelled = true;
     };
-  }, [conversationId]);
+  }, [conversationId, t]);
 
   const handleModelChange = (newProvider: string, newModel: string) => {
     setProvider(newProvider);
@@ -173,6 +199,8 @@ export function Chat({
 
   const handleNewChat = () => {
     abortRef.current?.abort();
+    activeConvIdRef.current = null;
+    prevConvIdRef.current = null;
     setMessages([]);
     setActivity(null);
     setToast(null);
@@ -211,7 +239,11 @@ export function Chat({
       setToast(null);
       setBusy(true);
       setActivity(null);
-      setMessages((m) => [...m, { role: "user", text: content, citations: [] }]);
+      setMessages((m) => [
+        ...m,
+        { role: "user", text: content, citations: [] },
+        { role: "assistant", text: "", citations: [] },
+      ]);
 
       let citations: Citation[] = [];
       let text = "";
@@ -233,11 +265,6 @@ export function Chat({
           return next;
         });
 
-      setMessages((m) => [
-        ...m,
-        { role: "assistant", text: "", citations: [] },
-      ]);
-
       const onEvent = (ev: SseEvent) => {
         if (ev.type === "citations") citations = ev.citations;
         else if (ev.type === "token") text += ev.text;
@@ -246,12 +273,14 @@ export function Chat({
           outOfScope = ev.out_of_scope ?? false;
           setActivity(null);
           if (ev.conversation_id) {
+            activeConvIdRef.current = ev.conversation_id;
             onConversationChange?.(ev.conversation_id);
           }
         } else if (ev.type === "error") {
           error = `${ev.code}: ${ev.detail}`;
           setActivity(null);
           if (ev.conversation_id) {
+            activeConvIdRef.current = ev.conversation_id;
             onConversationChange?.(ev.conversation_id);
           }
         } else if (ev.type === "status") setActivity(ev.message || ev.stage);
@@ -266,6 +295,10 @@ export function Chat({
           model,
         })) {
           onEvent(ev);
+        }
+        if (!text && !error) {
+          error = t.chat.errorNetwork;
+          apply();
         }
       } catch (e) {
         if (e instanceof DOMException && e.name === "AbortError") {
@@ -302,12 +335,12 @@ export function Chat({
             aria-label={t.modelSwitcher.switchModelButton}
             className="inline-flex items-center gap-1.5 rounded-lg border border-border/70 bg-background/80 hover:bg-muted/80 px-2.5 py-1 text-xs text-foreground shadow-2xs transition-all cursor-pointer hover:border-primary/40 group shrink-0"
           >
-            <span
+            {/* <span
               className={cn(
                 "h-2 w-2 rounded-full shrink-0 animate-pulse",
                 provider === "ollama" ? "bg-emerald-500" : "bg-sky-500",
               )}
-            />
+            /> */}
             {provider === "ollama" ? (
               <ShieldCheck className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
             ) : (
@@ -329,15 +362,6 @@ export function Chat({
             </Badge>
           )}
 
-          {isCloudProvider && activeProviderHasKey === true && (
-            <Badge
-              variant="outline"
-              className="text-[10px] px-1.5 py-0.5 border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium shrink-0"
-            >
-              <Check className="h-2.5 w-2.5 me-0.5" />
-              {t.modelSwitcher.apiKeySavedPrefix}
-            </Badge>
-          )}
           {isCloudProvider && activeProviderHasKey === false && (
             <Badge
               variant="outline"
@@ -349,9 +373,9 @@ export function Chat({
           )}
         </div>
 
-        {/* Action buttons: New Chat & Clear Chat */}
+        {/* Action button: New Chat */}
         <div className="flex items-center gap-1.5 shrink-0">
-          {(messages.length > 0 || conversationId !== null) && (
+          {messages.length > 0 && (
             <button
               type="button"
               onClick={handleNewChat}
@@ -360,23 +384,7 @@ export function Chat({
               className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary px-2.5 py-1 text-xs shadow-2xs transition-colors cursor-pointer"
             >
               <Plus className="h-3.5 w-3.5" />
-              <span className="text-[11px] font-medium hidden sm:inline">{t.chat.newChat}</span>
-            </button>
-          )}
-
-          {messages.length > 0 && (
-            <button
-              type="button"
-              onClick={() => {
-                setMessages([]);
-                setActivity(null);
-              }}
-              title={t.chat.clearChat}
-              aria-label={t.chat.clearChat}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-background/80 px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted shadow-2xs transition-colors cursor-pointer"
-            >
-              <RefreshCw className="h-3 w-3" />
-              <span className="text-[11px] font-medium hidden sm:inline">{t.chat.clearChat}</span>
+              <span className="text-[11px] font-medium">{t.chat.newChat}</span>
             </button>
           )}
         </div>
@@ -447,16 +455,19 @@ export function Chat({
             ) : (
               /* Assistant message: seamless integration, same background as chat canvas */
               <div className="w-full space-y-2 text-foreground">
-                <div className="text-sm leading-relaxed whitespace-pre-wrap">
-                  {m.text ||
-                    (m.error ? (
-                      ""
-                    ) : (
-                      <span className="inline-flex items-center gap-2 text-xs text-muted-foreground animate-pulse py-1">
-                        <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-                        {t.chat.draftingStatus}
-                      </span>
-                    ))}
+                <div className="text-sm leading-relaxed">
+                  {m.text ? (
+                    <MarkdownRenderer content={m.text} />
+                  ) : busy && i === messages.length - 1 && !m.error ? (
+                    <span className="inline-flex items-center gap-2 text-xs text-muted-foreground animate-pulse py-1">
+                      <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                      {t.chat.draftingStatus}
+                    </span>
+                  ) : !m.error ? (
+                    <span className="text-xs text-destructive font-medium">
+                      {t.chat.errorNetwork}
+                    </span>
+                  ) : null}
                 </div>
 
                 {/* Error */}
@@ -577,7 +588,7 @@ export function Chat({
                 disabled={!input.trim()}
                 className="h-8 w-8 rounded-lg shadow-2xs bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-30 transition-all"
               >
-                <Send className="h-3.5 w-3.5" />
+                <ArrowRightIcon className="h-3.5 w-3.5" />
                 <span className="sr-only">{t.chat.send}</span>
               </Button>
             )}

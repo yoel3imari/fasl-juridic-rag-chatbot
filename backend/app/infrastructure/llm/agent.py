@@ -1,15 +1,23 @@
-"""Provider-agnostic agent factory: model string only, no provider branching."""
+"""Provider-agnostic agent factory: universal OpenAI-compatible instantiation."""
 
 from __future__ import annotations
 
 import os
 from typing import Any
 
-from app.config import settings
+from app.config import Settings
 from app.domain.privacy import EXTERNAL_PROVIDERS, LOCAL_PROVIDERS
 from app.infrastructure.llm.errors import InvalidModelError
 
 KNOWN_PROVIDERS: frozenset[str] = EXTERNAL_PROVIDERS | LOCAL_PROVIDERS
+
+DEFAULT_BASE_URLS: dict[str, str] = {
+    "openai": "https://api.openai.com/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
+    "groq": "https://api.groq.com/openai/v1",
+    "ollama": "http://localhost:11434/v1",
+    "google": "https://generativelanguage.googleapis.com/v1beta/openai/",
+}
 
 _STORED_KEY_ENV_MAP: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("openrouter", ("OPENROUTER_API_KEY",)),
@@ -67,17 +75,50 @@ def get_agent(
     """Build a pydantic_ai.Agent from settings (or explicit overrides).
 
     Raises InvalidModelError for unknown providers / empty model names.
-    Provider SDKs read their own env (e.g. OPENAI_API_KEY); OLLAMA_BASE_URL
-    gets a sane default here so local-first works out of the box.
+    Uses native Ollama for ollama and universal OpenAIProvider for cloud providers
+    with zero vendor SDK dependencies.
     """
     from pydantic_ai import Agent
 
-    model_string = build_model_string(
-        provider if provider is not None else settings.LLM_PROVIDER,
-        model if model is not None else settings.LLM_MODEL,
-    )
+    env = Settings()
+    prov = (provider if provider is not None else env.LLM_PROVIDER).strip().lower()
+    mod = (model if model is not None else env.LLM_MODEL).strip()
+    model_string = build_model_string(prov, mod)
+
     _inject_stored_api_keys()
-    os.environ.setdefault("OLLAMA_BASE_URL", settings.OLLAMA_BASE_URL)
-    agent = Agent(model_string)
+    os.environ.setdefault("OLLAMA_BASE_URL", env.OLLAMA_BASE_URL)
+
+    if prov == "ollama":
+        agent = Agent(f"ollama:{mod}")
+    else:
+        from pydantic_ai.models.openai import OpenAIChatModel
+        from pydantic_ai.providers.openai import OpenAIProvider
+
+        api_key = os.environ.get(f"{prov.upper()}_API_KEY", "")
+        if prov == "google" and not api_key:
+            api_key = os.environ.get("GEMINI_API_KEY", "") or os.environ.get("GOOGLE_API_KEY", "")
+        stored_base_url: str | None = None
+        try:
+            from app.repositories import settings as settings_store
+
+            if not api_key:
+                api_key = settings_store.get_api_key(prov)
+            stored_base_url = settings_store.get_base_url(prov)
+        except Exception:
+            pass
+
+        base_url = (
+            os.environ.get(f"{prov.upper()}_BASE_URL")
+            or stored_base_url
+            or DEFAULT_BASE_URLS.get(prov)
+        )
+        openai_provider = OpenAIProvider(
+            base_url=base_url or None,
+            api_key=api_key or "no-key-required",
+        )
+        chat_model = OpenAIChatModel(mod, provider=openai_provider)
+        agent = Agent(chat_model)
+
     agent.model_name = model_string
     return agent
+

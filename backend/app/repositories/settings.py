@@ -39,6 +39,7 @@ def _defaults() -> dict[str, Any]:
     return {
         "provider": None,
         "model": None,
+        "base_urls": {},
         "api_keys": {p: "" for p in SUPPORTED_KEY_PROVIDERS},
     }
 
@@ -57,6 +58,11 @@ def _normalize_loaded(data: Any) -> dict[str, Any]:
         for p in SUPPORTED_KEY_PROVIDERS:
             val = raw_keys.get(p)
             base["api_keys"][p] = val if isinstance(val, str) else ""
+    raw_urls = data.get("base_urls")
+    if isinstance(raw_urls, dict):
+        for k, v in raw_urls.items():
+            if isinstance(k, str) and isinstance(v, str):
+                base["base_urls"][k.strip().lower()] = v.strip()
     return base
 
 
@@ -78,6 +84,7 @@ def save_llm_settings(
     provider: str | None = None,
     model: str | None = None,
     api_keys: dict[str, str | None] | None = None,
+    base_urls: dict[str, str | None] | None = None,
 ) -> dict[str, Any]:
     """Merge the given fields into the stored settings and persist atomically.
 
@@ -98,8 +105,37 @@ def save_llm_settings(
                 current["api_keys"][name] = ""
             elif isinstance(value, str):
                 current["api_keys"][name] = value
+    if base_urls is not None:
+        if "base_urls" not in current or not isinstance(current["base_urls"], dict):
+            current["base_urls"] = {}
+        for key, value in base_urls.items():
+            name = key.strip().lower()
+            if value is None or (isinstance(value, str) and not value.strip()):
+                current["base_urls"].pop(name, None)
+            elif isinstance(value, str):
+                current["base_urls"][name] = value.strip()
     _atomic_write(current)
     return current
+
+
+def get_base_url(provider: str) -> str | None:
+    """Return the stored custom base URL for a provider, or None."""
+    stored = load_llm_settings()
+    urls = stored.get("base_urls")
+    if isinstance(urls, dict):
+        val = urls.get(provider.strip().lower())
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    return None
+
+
+def base_urls() -> dict[str, str | None]:
+    """Map of provider -> custom base URL."""
+    stored = load_llm_settings()
+    urls = stored.get("base_urls")
+    if isinstance(urls, dict):
+        return {k: v for k, v in urls.items() if isinstance(v, str)}
+    return {}
 
 
 def _atomic_write(data: dict[str, Any]) -> None:

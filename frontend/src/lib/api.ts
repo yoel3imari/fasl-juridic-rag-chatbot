@@ -602,12 +602,27 @@ export interface LlmSettings {
   privacy_mode: string;
   keys_status: Record<string, boolean>;
   masked_keys: Record<string, string | null>;
+  base_urls?: Record<string, string | null>;
 }
 
 export interface SaveLlmSettingsInput {
   provider?: string;
   model?: string;
   api_keys?: Record<string, string | null>;
+  base_urls?: Record<string, string | null>;
+}
+
+export interface LlmTestInput {
+  provider: string;
+  model: string;
+  base_url?: string;
+  api_key?: string;
+}
+
+export interface LlmTestResult {
+  success: boolean;
+  message: string;
+  latency_ms?: number | null;
 }
 
 export async function getLlmSettings(): Promise<LlmSettings> {
@@ -626,6 +641,18 @@ export async function saveLlmSettings(
   });
   if (!res.ok) throw new ApiError(res.status, await safeText(res));
   return res.json() as Promise<LlmSettings>;
+}
+
+export async function testLlmConnection(
+  input: LlmTestInput,
+): Promise<LlmTestResult> {
+  const res = await fetch(`${API_BASE}/api/v1/settings/llm/test`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new ApiError(res.status, await safeText(res));
+  return res.json() as Promise<LlmTestResult>;
 }
 
 export interface MessageRecord {
