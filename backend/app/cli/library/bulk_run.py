@@ -863,6 +863,16 @@ async def run_run(args: argparse.Namespace) -> dict[str, Any]:
             index_report = await ensure_index(
                 session, scope, artifact_dir=args.artifact_dir, store=store
             )
+            from app.cli.library.bulk_state import export_manifest
+            from sqlalchemy import select
+            from app.models.library_import import LibraryImportFile
+
+            stmt = select(LibraryImportFile).where(
+                (LibraryImportFile.quarantine_reason.is_(None) | ~LibraryImportFile.quarantine_reason.like("duplicate-of:%"))
+                & (LibraryImportFile.parse_status != "failed")
+            )
+            winner_rows = (await session.execute(stmt)).scalars().all()
+            export_manifest(winner_rows)
     finally:
         await engine.dispose()
     print(

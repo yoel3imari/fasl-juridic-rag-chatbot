@@ -25,9 +25,11 @@ class Settings(BaseSettings):
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
 
     OPENAI_API_KEY: str = ""
+    OPENAI_BASE_URL: str = "https://api.openai.com/v1"
     ANTHROPIC_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
     GROQ_API_KEY: str = ""
+    GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
 
     EMBEDDING_MODEL: str = "granite-embedding-107m"
 
@@ -35,7 +37,7 @@ class Settings(BaseSettings):
     QDRANT_EVIDENCE_COLLECTION: str = "matter_evidence"
     QDRANT_AUTHORITY_COLLECTION: str = "legal_authorities"
     QDRANT_LOCAL_PATH: str | None = None
-    DATABASE_URL: str = "sqlite+aiosqlite:///./matters.db"
+    DATABASE_URL: str = "sqlite+aiosqlite:///./data/matters.db"
 
     MATTER_PRIVACY_MODE: str = "strict"
     LIBRARY_VERSION: str = "1.0.0"

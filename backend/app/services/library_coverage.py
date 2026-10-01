@@ -40,7 +40,11 @@ def _ledger_db_path() -> Path | None:
         return None
     candidate = Path(raw)
     if not candidate.is_absolute():
-        candidate = Path.cwd() / candidate
+        resolved = BACKEND_ROOT / candidate
+        if resolved.exists():
+            candidate = resolved
+        else:
+            candidate = Path.cwd() / candidate
     return candidate
 
 

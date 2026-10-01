@@ -58,7 +58,7 @@ services:
     volumes:
       - ./backend/app:/app/app
       - ./backend/alembic:/app/alembic
-      - backend_data:/app/data
+      - ./backend/data:/app/data
     depends_on:
       qdrant:
         condition: service_healthy
@@ -106,4 +106,3 @@ services:
 volumes:
   qdrant_data:
   crispembed_models:
-  backend_data:

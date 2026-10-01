@@ -20,6 +20,10 @@ import {
   Calendar,
   Layers,
   ShieldCheck,
+  CheckCircle2,
+  Clock,
+  LayoutGrid,
+  Table as TableIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,6 +42,7 @@ export default function LibraryPage() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<"table" | "grid">("table");
 
   const fetchCoverage = () => {
     libraryCoverage()
@@ -76,8 +81,8 @@ export default function LibraryPage() {
               href="/"
               className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-background/50 px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted/50 transition-colors shadow-2xs"
             >
-              {isRTL ? <ArrowRight className="h-3.5 w-3.5" /> : <ArrowLeft className="h-3.5 w-3.5" />}
-              <span>{t.library.backToPlatform}</span>
+              {isRTL ? <ArrowRight className="h-3.5 w-3.5" /> : <ArrowLeft className="h-5 w-5" />}
+              {/* <span>{t.library.backToPlatform}</span> */}
             </Link>
 
             <div className="h-3.5 w-px bg-border/60" />
@@ -202,7 +207,7 @@ export default function LibraryPage() {
 
         {/* Legal Codes Grid */}
         <div className="space-y-3">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-2">
               <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                 <BookOpen className="h-3.5 w-3.5 text-primary" />
@@ -217,77 +222,184 @@ export default function LibraryPage() {
               )}
             </div>
 
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => setUploadModalOpen(true)}
-              className="h-8 rounded-lg gap-1.5 text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 shadow-2xs transition-all cursor-pointer"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              <span>{t.library.uploadButton}</span>
-            </Button>
-          </div>
+            <div className="flex items-center gap-2">
+              {/* View Toggle */}
+              <div className="flex items-center rounded-xl border border-border/70 bg-card p-0.5 shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => setViewMode("table")}
+                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
+                    viewMode === "table"
+                      ? "bg-primary text-primary-foreground shadow-2xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  title={t.library.viewTable}
+                >
+                  <TableIcon className="h-3.5 w-3.5" />
+                  <span>{t.library.viewTable}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("grid")}
+                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
+                    viewMode === "grid"
+                      ? "bg-primary text-primary-foreground shadow-2xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  title={t.library.viewGrid}
+                >
+                  <LayoutGrid className="h-3.5 w-3.5" />
+                  <span>{t.library.viewGrid}</span>
+                </button>
+              </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-            {filteredEntries.map((e, i) => (
-              <div
-                key={i}
-                className="flex flex-col justify-between rounded-2xl border border-border/70 bg-card p-5 hover:border-primary/50 transition-all shadow-2xs hover:shadow-xs space-y-3"
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setUploadModalOpen(true)}
+                className="h-8 rounded-lg gap-1.5 text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 shadow-2xs transition-all cursor-pointer"
               >
-                <div>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
-                      <Scale className="h-4 w-4" />
-                    </div>
-                    <Badge variant="authority" className="text-[10px] font-medium">
-                      {e.edition}
-                    </Badge>
-                  </div>
-
-                  <h4 className="text-sm font-semibold text-foreground mt-3">
-                    {e.source}
-                  </h4>
-                  <p className="text-[11px] text-muted-foreground font-mono mt-0.5">
-                    {t.sourceInspector.versionLabel.replace("{version}", e.version)}
-                  </p>
-                </div>
-
-                <div className="space-y-2.5 pt-2">
-                  {e.coverage_note && (
-                    <p className="text-[11px] text-muted-foreground leading-relaxed bg-muted/20 p-2 rounded-lg border border-border/30">
-                      {e.coverage_note}
-                    </p>
-                  )}
-
-                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border/50 text-[11px] text-muted-foreground">
-                    {e.chunks !== undefined && (
-                      <span className="flex items-center gap-1 font-medium text-primary">
-                        <Layers className="h-3 w-3" />
-                        {t.library.chunksCount.replace("{count}", String(e.chunks))}
-                      </span>
-                    )}
-                    {e.pub_date && (
-                      <span className="flex items-center gap-1">
-                        <Calendar className="h-3 w-3" />
-                        {t.library.publishedDate.replace("{date}", e.pub_date)}
-                      </span>
-                    )}
-                    {e.language && (
-                      <span className="rounded bg-muted/60 px-1.5 py-0.2 text-[10px] font-semibold">
-                        {e.language}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-
-            {filteredEntries.length === 0 && !error && (
-              <div className="col-span-full py-12 text-center text-xs text-muted-foreground">
-                {t.library.emptyLibrary}
-              </div>
-            )}
+                <Plus className="h-3.5 w-3.5" />
+                <span>{t.library.uploadButton}</span>
+              </Button>
+            </div>
           </div>
+
+          {viewMode === "table" ? (
+            <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-2xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-start text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-border/70 bg-muted/30 text-muted-foreground font-semibold">
+                      <th className="py-3 px-4 text-start font-medium">{t.library.tableTitle}</th>
+                      <th className="py-3 px-4 text-start font-medium">{t.library.tableVersion}</th>
+                      <th className="py-3 px-4 text-start font-medium">{t.library.tableEdition}</th>
+                      <th className="py-3 px-4 text-start font-medium">{t.library.tableChunks}</th>
+                      <th className="py-3 px-4 text-start font-medium">{t.library.tableDate}</th>
+                      <th className="py-3 px-4 text-start font-medium">{t.library.tableStatus}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/40 text-foreground">
+                    {filteredEntries.map((e, i) => (
+                      <tr key={i} className="hover:bg-muted/30 transition-colors">
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-2.5">
+                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                              <Scale className="h-3.5 w-3.5" />
+                            </div>
+                            <div className="min-w-0 max-w-sm sm:max-w-md">
+                              <p className="font-semibold text-foreground truncate" title={e.source}>{e.source}</p>
+                              {e.coverage_note && (
+                                <p className="text-[10px] text-muted-foreground truncate mt-0.5" title={e.coverage_note}>{e.coverage_note}</p>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 font-mono text-[11px] text-muted-foreground max-w-[180px] truncate" title={e.version}>
+                          {e.version}
+                        </td>
+                        <td className="py-3 px-4">
+                          <Badge variant="authority" className="text-[10px] font-medium whitespace-nowrap">
+                            {e.edition}
+                          </Badge>
+                        </td>
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1.5 font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-md text-[11px]">
+                            <Layers className="h-3 w-3" />
+                            {t.library.chunksCount.replace("{count}", String(e.chunks ?? 0))}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-muted-foreground font-mono text-[11px] whitespace-nowrap">
+                          {e.pub_date || e.doc_date || "—"}
+                        </td>
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          {e.status === "seeded" ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                              <CheckCircle2 className="h-3 w-3" />
+                              {t.library.statusSeeded}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">
+                              <Clock className="h-3 w-3" />
+                              {t.library.statusPending}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredEntries.length === 0 && !error && (
+                      <tr>
+                        <td colSpan={6} className="py-12 text-center text-xs text-muted-foreground">
+                          {t.library.emptyLibrary}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              {filteredEntries.map((e, i) => (
+                <div
+                  key={i}
+                  className="flex flex-col justify-between rounded-2xl border border-border/70 bg-card p-5 hover:border-primary/50 transition-all shadow-2xs hover:shadow-xs space-y-3"
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                        <Scale className="h-4 w-4" />
+                      </div>
+                      <Badge variant="authority" className="text-[10px] font-medium">
+                        {e.edition}
+                      </Badge>
+                    </div>
+
+                    <h4 className="text-sm font-semibold text-foreground mt-3">
+                      {e.source}
+                    </h4>
+                    <p className="text-[11px] text-muted-foreground font-mono mt-0.5">
+                      {t.sourceInspector.versionLabel.replace("{version}", e.version)}
+                    </p>
+                  </div>
+
+                  <div className="space-y-2.5 pt-2">
+                    {e.coverage_note && (
+                      <p className="text-[11px] text-muted-foreground leading-relaxed bg-muted/20 p-2 rounded-lg border border-border/30">
+                        {e.coverage_note}
+                      </p>
+                    )}
+
+                    <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border/50 text-[11px] text-muted-foreground">
+                      {e.chunks !== undefined && (
+                        <span className="flex items-center gap-1 font-medium text-primary">
+                          <Layers className="h-3 w-3" />
+                          {t.library.chunksCount.replace("{count}", String(e.chunks))}
+                        </span>
+                      )}
+                      {e.pub_date && (
+                        <span className="flex items-center gap-1">
+                          <Calendar className="h-3 w-3" />
+                          {t.library.publishedDate.replace("{date}", e.pub_date)}
+                        </span>
+                      )}
+                      {e.language && (
+                        <span className="rounded bg-muted/60 px-1.5 py-0.2 text-[10px] font-semibold">
+                          {e.language}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {filteredEntries.length === 0 && !error && (
+                <div className="col-span-full py-12 text-center text-xs text-muted-foreground">
+                  {t.library.emptyLibrary}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {gaps.length > 0 && (

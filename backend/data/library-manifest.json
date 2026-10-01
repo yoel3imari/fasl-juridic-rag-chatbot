@@ -5060,6 +5060,17 @@
       "file_path": "مادة المعاملات الالكترونية/مرسوم ‏بتحديد كيفيات وإجراءات إحداث المقاولات بطريقة إلكترونية ومواكبتها.pdf",
       "source": "مرسوم",
       "version": "مرسوم ‏بتحديد كيفيات وإجراءات إحداث المقاولات بطريقة إلكترونية ومواكبتها"
+    },
+    {
+      "source": "Code de Commerce Test",
+      "version": "2024",
+      "edition": "ar-general",
+      "file_path": "backend/data/seed/code_commerce_test.txt",
+      "pub_date": "2024-01-15",
+      "doc_date": null,
+      "hijri_date": null,
+      "language": "ar",
+      "coverage_note": "Uploaded for testing"
     }
   ]
 }

@@ -68,7 +68,7 @@ bulk-run:
 # manifest entry count, live Qdrant points_count, and the served model/dim.
 bulk-status:
 	cd backend && uv run python -c "import sqlite3, json, urllib.request; \
-	db = sqlite3.connect('matters.db'); \
+	db = sqlite3.connect('data/matters.db'); \
 	files = db.execute('select count(*), sum(case when index_status = \'indexed\' then 1 else 0 end) from library_import_files').fetchone(); \
 	chunks = db.execute('select count(*), sum(case when status = \'indexed\' then 1 else 0 end) from library_import_chunks').fetchone(); \
 	print(f'ledger files total={files[0]} indexed={files[1]}'); \
