@@ -9,8 +9,10 @@ The rules this module implements:
 * **One-shot legacy import.** While ``llm_active_settings.json_imported_at`` is
   NULL the caller's payload is upserted and the marker claimed in the same write
   transaction, so a later "clear settings" can never resurrect
-  ``<STORAGE_DIR>/llm_settings.json``. An empty payload still stamps the marker:
-  a missing or corrupt file is never retried. The file itself is only ever read.
+  ``<STORAGE_DIR>/llm_settings.json``. The marker is stamped even when there is
+  nothing to import, and even when the payload turns out to be unrepresentable --
+  a missing, corrupt, or unstorable file is never retried. The file itself is
+  only ever read.
 * **Partial upserts.** A key write and a base-URL write are separate statements
   because one save may carry both for the same provider, and each must leave the
   other column alone.
@@ -31,7 +33,7 @@ from typing import Final
 
 from sqlalchemy import select, text
 from sqlalchemy.engine import Connection
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import DataError, IntegrityError, SQLAlchemyError
 
 from app.domain.privacy import EXTERNAL_PROVIDER_IDS
 from app.models.llm_config import (
@@ -181,11 +183,32 @@ def _import(conn: Connection, payload: ImportedSettings) -> StoredSettings:
     return _read(conn)
 
 
+def _stamp_marker_only() -> None:
+    """Consume the one-shot marker on its own, after an unstorable payload.
+
+    Only the marker is written: the upserts that failed are dropped, so the
+    settings that *were* representable from that file are lost -- but the file is
+    never retried, which is the property that matters (an unfiltered name used to
+    roll the claim back and wedge every later read).
+    """
+    with engine().execution_options(begin_immediate=True).begin() as conn:
+        conn.execute(_SQL_SAVE_ACTIVE, {"provider": None, "model": None})
+        conn.execute(_SQL_CLAIM_IMPORT)
+
+
 def read_settings(legacy_source: Callable[[], ImportedSettings]) -> StoredSettings:
     """Read the stored settings, importing the legacy JSON once when due.
 
     ``legacy_source`` is called at most once per database, and only while
     ``json_imported_at`` is still NULL.
+
+    Failure classes are not the same thing. ``IntegrityError``/``DataError`` mean
+    *this payload* cannot be stored (a name the registry does not have, a value a
+    column rejects) and will not become storable later, so the marker is stamped
+    and the file is retired. Everything else -- ``OperationalError`` on a locked
+    database, a missing table, a dead connection, an unreadable path -- is the
+    *environment* being briefly unusable, so it degrades without stamping and a
+    later read imports as soon as the database is back.
     """
     try:
         with engine().connect() as conn:
@@ -193,8 +216,13 @@ def read_settings(legacy_source: Callable[[], ImportedSettings]) -> StoredSettin
         if state.json_imported:
             return state
         payload = legacy_source()
-        with engine().execution_options(begin_immediate=True).begin() as conn:
-            return _import(conn, payload)
+        try:
+            with engine().execution_options(begin_immediate=True).begin() as conn:
+                return _import(conn, payload)
+        except (IntegrityError, DataError):
+            _stamp_marker_only()
+            with engine().connect() as conn:
+                return _read(conn)
     except (SQLAlchemyError, OSError):
         return EMPTY_STATE
 

@@ -155,6 +155,142 @@ def test_legacy_json_imported_once_and_never_rewritten(isolated_store: Path) -> 
     assert (path.read_bytes(), path.stat().st_mtime_ns) == before
 
 
+def test_legacy_json_with_unknown_base_url_name_still_imports_once(isolated_store: Path) -> None:
+    # Given: a legacy JSON holding representable settings AND a base_urls entry for
+    # a provider that does not exist -- the file is user-owned by design, so a
+    # hand-edit, a fork, or a downgraded build can put any name in it.
+    path = _write_legacy(
+        isolated_store / "storage",
+        {
+            "provider": "openrouter",
+            "model": "legacy/model",
+            "api_keys": {"groq": "gsk-legacy"},
+            "base_urls": {
+                "groq": "https://api.groq.com/openai/v1",
+                "skynet": "http://typo.example",
+            },
+        },
+    )
+    before = (path.read_bytes(), path.stat().st_mtime_ns)
+    # When: settings are loaded twice.
+    first = settings_store.load_llm_settings()
+    second = settings_store.load_llm_settings()
+    # Then: the representable settings are imported and readable, the junk name is
+    # skipped instead of failing the whole import, and the marker is stamped -- so
+    # the second load is a plain read, not a retried doomed import.
+    assert first["provider"] == "openrouter"
+    assert first["model"] == "legacy/model"
+    assert settings_store.get_api_key("groq") == "gsk-legacy"
+    assert settings_store.has_api_key("groq") is True
+    assert settings_store.base_urls() == {"groq": "https://api.groq.com/openai/v1"}
+    assert "skynet" not in settings_store.base_urls()
+    assert _marker(isolated_store / "matters.db") is not None
+    assert second == first
+    assert (path.read_bytes(), path.stat().st_mtime_ns) == before
+
+
+def test_permanent_import_failure_stamps_marker_and_never_retries(isolated_store: Path) -> None:
+    # Given: a legacy JSON naming a provider whose registry row is gone. The
+    # credentials FK is live, so this payload is *permanently* unstorable -- no
+    # future read can make it succeed.
+    from sqlalchemy import text
+    from sqlalchemy.exc import IntegrityError
+
+    path = _write_legacy(
+        isolated_store / "storage",
+        {
+            "provider": "openrouter",
+            "model": "legacy/model",
+            "api_keys": {"groq": "gsk-legacy-0002"},
+            "base_urls": {"groq": "https://api.groq.com/openai/v1"},
+        },
+    )
+    before = (path.read_bytes(), path.stat().st_mtime_ns)
+    database = isolated_store / "matters.db"
+    settings_engine.engine()  # create the tables + registry without importing yet
+    with sqlite3.connect(database) as conn:
+        conn.execute("DELETE FROM llm_providers WHERE name = 'groq'")
+    # Then: writing that provider's credential really raises IntegrityError (the FK
+    # is live and the class is the one the stamp branch is written for), so this is
+    # the permanent failure mode and not an environment hiccup.
+    with pytest.raises(IntegrityError):
+        with settings_engine.engine().begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO llm_provider_credentials (provider, api_key)"
+                    " VALUES (:provider, :api_key)"
+                ),
+                {"provider": "groq", "api_key": "x"},
+            )
+    # When: settings are loaded twice.
+    first = settings_store.load_llm_settings()
+    second = settings_store.load_llm_settings()
+    # Then: no exception, and the documented tradeoff -- the payload is DROPPED (a
+    # rolled-back transaction cannot keep half of it, and a pre-existing row would
+    # survive the COALESCE) while the marker IS consumed, so the file is retired
+    # instead of wedging every later read.
+    assert first["provider"] is None
+    assert first["model"] is None
+    assert settings_store.has_api_key("groq") is False
+    assert _marker(database) is not None
+    assert second == first
+    assert (path.read_bytes(), path.stat().st_mtime_ns) == before
+    with sqlite3.connect(database) as conn:
+        assert conn.execute("SELECT count(*) FROM llm_provider_credentials").fetchone()[0] == 0
+    # And the registry heals for whoever runs next: a fresh engine re-seeds it.
+    settings_engine._reset_engine_cache()
+    settings_engine.engine()
+    with sqlite3.connect(database) as conn:
+        assert conn.execute("SELECT count(*) FROM llm_providers").fetchone()[0] == 6
+
+
+def test_transient_import_failure_leaves_marker_unset_and_imports_later(
+    isolated_store: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Given: a healthy database whose import claim statement is poisoned, which is
+    # what a locked database looks like from inside the transaction.
+    from sqlalchemy import text
+    from sqlalchemy.exc import OperationalError
+
+    from app.repositories import settings_db
+
+    path = _write_legacy(
+        isolated_store / "storage",
+        {
+            "provider": "openrouter",
+            "model": "legacy/model",
+            "api_keys": {"groq": "gsk-legacy-0002"},
+        },
+    )
+    before = (path.read_bytes(), path.stat().st_mtime_ns)
+    database = isolated_store / "matters.db"
+    settings_engine.engine()
+    healthy = settings_db._SQL_CLAIM_IMPORT
+    poisoned = text("SELECT no_such_column FROM llm_active_settings")
+    monkeypatch.setattr(settings_db, "_SQL_CLAIM_IMPORT", poisoned)
+    # Then: the injected fault is really an OperationalError -- the transient
+    # class, not the permanent one the test above covers.
+    with pytest.raises(OperationalError):
+        with settings_engine.engine().connect() as conn:
+            conn.execute(poisoned)
+    # When: settings are loaded with that fault in place.
+    degraded = settings_store.load_llm_settings()
+    # Then: the read degrades instead of raising, and the marker is NOT spent --
+    # a locked database is not the file's fault, so the import stays pending.
+    assert degraded["provider"] is None
+    assert _marker(database) is None
+    assert (path.read_bytes(), path.stat().st_mtime_ns) == before
+    # When: the database is usable again.
+    monkeypatch.setattr(settings_db, "_SQL_CLAIM_IMPORT", healthy)
+    recovered = settings_store.load_llm_settings()
+    # Then: the very next read imports the file and stamps the marker -- the
+    # failure cost a retry, not the user's settings.
+    assert recovered["provider"] == "openrouter"
+    assert recovered["model"] == "legacy/model"
+    assert settings_store.has_api_key("groq") is True
+    assert _marker(database) is not None
+
+
 def test_engine_cache_isolates_two_databases(
     isolated_store: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

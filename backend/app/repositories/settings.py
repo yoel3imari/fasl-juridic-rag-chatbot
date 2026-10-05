@@ -15,7 +15,7 @@ Reads degrade to :func:`_defaults` when the database is missing, locked, or
 corrupt -- the same silent-defaults contract the JSON store had for a missing or
 unparseable file. Writes raise, and :func:`api.v1.chat` already logs and carries
 on when they do. The one loud failure is an in-memory ``DATABASE_URL``, which
-:mod:`app.repositories.settings_db` refuses by name.
+:mod:`app.repositories.settings_engine` refuses by name.
 """
 
 from __future__ import annotations
@@ -38,7 +38,8 @@ SUPPORTED_KEY_PROVIDERS: tuple[str, ...] = EXTERNAL_PROVIDER_IDS
 
 # base_urls may name a local provider (ollama), so its vocabulary is wider than
 # SUPPORTED_KEY_PROVIDERS. The credentials table has a foreign key to
-# llm_providers.name, so an unknown name cannot be stored at all.
+# llm_providers.name, so an unknown name cannot be stored at all -- which is why
+# both write paths filter to this vocabulary, the legacy import included.
 _KNOWN_PROVIDER_NAMES: frozenset[str] = frozenset(SUPPORTED_KEY_PROVIDERS) | LOCAL_PROVIDERS
 
 
@@ -108,13 +109,15 @@ def _load_legacy_json() -> dict[str, Any]:
 
 
 def _import_payload() -> ImportedSettings:
-    """Parse the legacy file into the import payload (empty when unusable)."""
+    """Parse the legacy file into the import payload (empty when unusable).
+
+    Names are filtered to the same vocabularies ``save_llm_settings`` uses.
+    """
     legacy = _load_legacy_json()
+    keys = {n: v for n, v in legacy["api_keys"].items() if n in SUPPORTED_KEY_PROVIDERS and v}
+    urls = {n: v for n, v in legacy["base_urls"].items() if n in _KNOWN_PROVIDER_NAMES and v}
     return ImportedSettings(
-        provider=legacy["provider"],
-        model=legacy["model"],
-        api_keys={n: v for n, v in legacy["api_keys"].items() if isinstance(v, str) and v},
-        base_urls={n: v for n, v in legacy["base_urls"].items() if isinstance(v, str) and v},
+        provider=legacy["provider"], model=legacy["model"], api_keys=keys, base_urls=urls
     )
 
 
