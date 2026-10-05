@@ -18,6 +18,11 @@ from app.models.library_import import (
     LibraryImportFile,
     LibraryImportRun,
 )
+from app.models.llm_config import (
+    LLMActiveSettings,
+    LLMProvider,
+    LLMProviderCredential,
+)
 from app.models.matter import Matter
 
 __all__ = [
@@ -31,6 +36,9 @@ __all__ = [
     "LibraryImportChunk",
     "LibraryImportFile",
     "LibraryImportRun",
+    "LLMActiveSettings",
+    "LLMProvider",
+    "LLMProviderCredential",
     "Matter",
     "Message",
     "ReviewState",
