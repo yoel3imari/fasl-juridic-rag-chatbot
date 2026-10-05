@@ -97,15 +97,39 @@ Env vars (see `.env.example`, `.env`, `backend/app/config/`):
 | `QDRANT_LOCAL_PATH` | empty | File path or `:memory:`, no server needed |
 | `EMBEDDING_DIM` | `384` | granite-embedding-107m dimension (`1024` on the bge-m3 fallback) |
 | `CRISPEMBED_URL` | `http://localhost:8080` | `http://crispembed:8080` inside compose |
-| `DATABASE_URL` | `sqlite+aiosqlite:///./matters.db` | `sqlite+aiosqlite:///./data/matters.db` in Docker |
+| `DATABASE_URL` | `sqlite+aiosqlite:///./matters.db` | `sqlite+aiosqlite:///./data/matters.db` in Docker; also holds the LLM config, see below |
 | `MATTER_PRIVACY_MODE` | `strict` | `strict` blocks external providers for matter evidence |
 | `LIBRARY_VERSION` | `1.0.0` | Returned by `/health` and coverage |
-| `STORAGE_DIR` | `./storage` | `FASL_STORAGE_DIR=/app/data/storage` in Docker |
+| `STORAGE_DIR` | `./storage` | `FASL_STORAGE_DIR=/app/data/storage` in Docker; source of the legacy `llm_settings.json`, read once only |
 | `UPLOAD_MAX_BYTES` | `20000000` | 20MB upload cap |
 | `OCR_CONFIDENCE_THRESHOLD` | `0.6` | Flags low-confidence sections for review |
 | `OCR_LANGUAGES` | `ara+fra` | Tesseract language data |
 
 `NEXT_PUBLIC_API_BASE_URL` is baked at build time for prod (see `docker-compose.prod.yml`). Runtime env alone does not change it.
+
+### LLM config storage
+
+The four user-settable LLM fields — `provider`, `model`, `api_keys`, `base_urls` — persist in the SQLite
+database at `DATABASE_URL` (`matters.db`), in three tables:
+
+| Table | Holds |
+|---|---|
+| `llm_providers` | Provider registry: the 6 known names plus their `kind` (`local` or `external`) |
+| `llm_provider_credentials` | Per-provider `api_key` and `base_url` |
+| `llm_active_settings` | Single active row: `provider`, `model`, and the JSON import marker |
+
+API keys are stored as plaintext in the database file, same as they were in the JSON store.
+
+The legacy `<STORAGE_DIR>/llm_settings.json` is imported once, on first use, into those three tables. After
+that import it is kept only as a backup and is never rewritten by the application, so hand-editing the file
+has no effect.
+
+`OPENROUTER_API_KEY` and the other `*_API_KEY` vars win over the keys held in
+`llm_provider_credentials`: a non-empty env value shadows the stored one
+(`get_agent`, `backend/app/infrastructure/llm/agent.py:175-183`), so a stale or dead env key shadows a valid
+stored key. Leave a var empty to fall through to the database.
+
+`MATTER_PRIVACY_MODE` stays env-only and is not stored in these tables.
 
 ## API overview
 
