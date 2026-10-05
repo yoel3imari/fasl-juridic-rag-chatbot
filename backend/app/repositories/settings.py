@@ -1,25 +1,49 @@
-"""File-based persistence for last-used LLM provider/model + API keys.
+"""SQLite persistence for last-used LLM provider/model + API keys.
 
-File-based (NOT DB) so it works before migrations run. JSON file at
-``<STORAGE_DIR>/llm_settings.json`` with 0o600 permissions. Missing or
-corrupt files degrade gracefully to defaults.
+Stored in the app database at ``DATABASE_URL`` (``matters.db``), in the three
+tables of :mod:`app.models.llm_config`. Those tables are self-bootstrapped with
+``checkfirst=True`` on first use, so LLM settings keep working before migrations
+run -- which is why this store never depended on alembic.
+
+The legacy ``<STORAGE_DIR>/llm_settings.json`` is an **import source only**: it is
+read exactly once, while ``llm_active_settings.json_imported_at`` is still NULL,
+and is never written again (``get_settings_path`` survives as that import path).
+The merge policy and the public dict shape below are unchanged from the file store
+this replaced, so all 14 call sites compile and behave identically.
+
+Reads degrade to :func:`_defaults` when the database is missing, locked, or
+corrupt -- the same silent-defaults contract the JSON store had for a missing or
+unparseable file. Writes raise, and :func:`api.v1.chat` already logs and carries
+on when they do. The one loud failure is an in-memory ``DATABASE_URL``, which
+:mod:`app.repositories.settings_db` refuses by name.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import tempfile
 from pathlib import Path
 from typing import Any
 
-from app.domain.privacy import EXTERNAL_PROVIDER_IDS
+from app.domain.privacy import EXTERNAL_PROVIDER_IDS, LOCAL_PROVIDERS
+from app.repositories import settings_db
+from app.repositories.settings_db import (
+    ImportedSettings,
+    ProviderCredential,
+    SettingsPatch,
+    StoredSettings,
+)
 
 SUPPORTED_KEY_PROVIDERS: tuple[str, ...] = EXTERNAL_PROVIDER_IDS
 
+# base_urls may name a local provider (ollama), so its vocabulary is wider than
+# SUPPORTED_KEY_PROVIDERS. The credentials table has a foreign key to
+# llm_providers.name, so an unknown name cannot be stored at all.
+_KNOWN_PROVIDER_NAMES: frozenset[str] = frozenset(SUPPORTED_KEY_PROVIDERS) | LOCAL_PROVIDERS
+
 
 def get_settings_path() -> Path:
-    """Resolve the JSON settings file path.
+    """Resolve the legacy JSON settings file path (the import source).
 
     Respects ``FASL_STORAGE_DIR`` then ``STORAGE_DIR`` env, falling back to
     the configured ``settings.STORAGE_DIR`` and finally ``./storage``.
@@ -66,12 +90,15 @@ def _normalize_loaded(data: Any) -> dict[str, Any]:
     return base
 
 
-def load_llm_settings() -> dict[str, Any]:
-    """Load persisted settings; return defaults on missing/corrupt file."""
-    path = get_settings_path()
+def _load_legacy_json() -> dict[str, Any]:
+    """Read + normalise the legacy JSON file; defaults when missing or corrupt.
+
+    This is the boundary where untrusted file content becomes typed values, so
+    ``_normalize_loaded`` does the narrowing and no caller re-validates.
+    """
     try:
-        raw = path.read_text(encoding="utf-8")
-    except (FileNotFoundError, NotADirectoryError, OSError):
+        raw = get_settings_path().read_text(encoding="utf-8")
+    except OSError:
         return _defaults()
     try:
         data = json.loads(raw)
@@ -80,18 +107,55 @@ def load_llm_settings() -> dict[str, Any]:
     return _normalize_loaded(data)
 
 
+def _import_payload() -> ImportedSettings:
+    """Parse the legacy file into the import payload (empty when unusable)."""
+    legacy = _load_legacy_json()
+    return ImportedSettings(
+        provider=legacy["provider"],
+        model=legacy["model"],
+        api_keys={n: v for n, v in legacy["api_keys"].items() if isinstance(v, str) and v},
+        base_urls={n: v for n, v in legacy["base_urls"].items() if isinstance(v, str) and v},
+    )
+
+
+def _read_state() -> StoredSettings:
+    """Current database state, running the one-shot legacy import when due."""
+    return settings_db.read_settings(_import_payload)
+
+
+def _state_to_dict(state: StoredSettings) -> dict[str, Any]:
+    """Project stored rows onto the public dict shape."""
+    credentials = state.credentials
+    return {
+        "provider": state.provider,
+        "model": state.model,
+        "base_urls": {n: c.base_url for n, c in credentials.items() if c.base_url},
+        "api_keys": {
+            name: credentials[name].api_key if name in credentials else ""
+            for name in state.external_providers
+        },
+    }
+
+
+def load_llm_settings() -> dict[str, Any]:
+    """Load persisted settings; return defaults when the database is unusable."""
+    return _state_to_dict(_read_state())
+
+
 def save_llm_settings(
     provider: str | None = None,
     model: str | None = None,
     api_keys: dict[str, str | None] | None = None,
     base_urls: dict[str, str | None] | None = None,
 ) -> dict[str, Any]:
-    """Merge the given fields into the stored settings and persist atomically.
+    """Merge the given fields into the stored settings and persist them.
 
-    ``api_keys`` values of ``None`` or ``""`` delete the stored key.
-    Returns the merged settings dict.
+    ``api_keys`` values of ``None`` or ``""`` delete the stored key. Returns the
+    merged settings dict.
     """
     current = load_llm_settings()
+    stored_keys: dict[str, str | None] = {}
+    stored_urls: dict[str, str | None] = {}
     if provider is not None:
         current["provider"] = provider
     if model is not None:
@@ -101,76 +165,48 @@ def save_llm_settings(
             name = key.strip().lower()
             if name not in SUPPORTED_KEY_PROVIDERS:
                 continue
-            if value is None or (isinstance(value, str) and value == ""):
+            if value is None or value == "":
                 current["api_keys"][name] = ""
-            elif isinstance(value, str):
+                stored_keys[name] = ""
+            else:
                 current["api_keys"][name] = value
+                stored_keys[name] = value
     if base_urls is not None:
-        if "base_urls" not in current or not isinstance(current["base_urls"], dict):
-            current["base_urls"] = {}
         for key, value in base_urls.items():
             name = key.strip().lower()
-            if value is None or (isinstance(value, str) and not value.strip()):
+            if name not in _KNOWN_PROVIDER_NAMES:
+                continue
+            if value is None or not value.strip():
                 current["base_urls"].pop(name, None)
-            elif isinstance(value, str):
+                stored_urls[name] = None
+            else:
                 current["base_urls"][name] = value.strip()
-    _atomic_write(current)
+                stored_urls[name] = value.strip()
+    settings_db.save_settings(
+        SettingsPatch(
+            provider=provider,
+            model=model,
+            api_keys=stored_keys,
+            base_urls=stored_urls,
+        )
+    )
     return current
 
 
 def get_base_url(provider: str) -> str | None:
     """Return the stored custom base URL for a provider, or None."""
-    stored = load_llm_settings()
-    urls = stored.get("base_urls")
-    if isinstance(urls, dict):
-        val = urls.get(provider.strip().lower())
-        if isinstance(val, str) and val.strip():
-            return val.strip()
-    return None
+    value = load_llm_settings()["base_urls"].get(provider.strip().lower())
+    return value if isinstance(value, str) and value.strip() else None
 
 
 def base_urls() -> dict[str, str | None]:
     """Map of provider -> custom base URL."""
-    stored = load_llm_settings()
-    urls = stored.get("base_urls")
-    if isinstance(urls, dict):
-        return {k: v for k, v in urls.items() if isinstance(v, str)}
-    return {}
-
-
-def _atomic_write(data: dict[str, Any]) -> None:
-    """Write JSON via tmp file + rename; ensure parent dir and 0o600 perms."""
-    path = get_settings_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(
-        dir=str(path.parent), prefix=".llm_settings_", suffix=".tmp"
-    )
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(data, fh, indent=2, ensure_ascii=False)
-            fh.write("\n")
-        os.chmod(tmp_name, 0o600)
-        os.replace(tmp_name, path)
-        try:
-            os.chmod(path, 0o600)
-        except OSError:
-            pass
-    except BaseException:
-        try:
-            os.unlink(tmp_name)
-        except OSError:
-            pass
-        raise
+    return load_llm_settings()["base_urls"]
 
 
 def get_api_key(provider: str) -> str:
     """Return the stored key for a provider, or ``""`` when absent."""
-    name = provider.strip().lower()
-    stored = load_llm_settings()
-    keys = stored.get("api_keys")
-    if not isinstance(keys, dict):
-        return ""
-    value = keys.get(name, "")
+    value = load_llm_settings()["api_keys"].get(provider.strip().lower())
     return value if isinstance(value, str) else ""
 
 
@@ -188,25 +224,19 @@ def mask_key(value: str | None) -> str | None:
 
 
 def keys_status() -> dict[str, bool]:
-    """Map of provider → whether a key is stored."""
-    stored = load_llm_settings()
-    keys = stored.get("api_keys")
-    if not isinstance(keys, dict):
-        keys = {}
+    """Map of provider → whether a key is stored (external providers only)."""
+    state = _read_state()
     return {
-        p: bool(keys.get(p)) if isinstance(keys.get(p), str) else False
-        for p in SUPPORTED_KEY_PROVIDERS
+        name: bool(state.credentials[name].api_key) if name in state.credentials else False
+        for name in state.external_providers
     }
 
 
 def masked_keys() -> dict[str, str | None]:
     """Map of provider → masked key (or ``None`` when absent)."""
-    stored = load_llm_settings()
-    keys = stored.get("api_keys")
-    if not isinstance(keys, dict):
-        keys = {}
+    state = _read_state()
     out: dict[str, str | None] = {}
-    for p in SUPPORTED_KEY_PROVIDERS:
-        val = keys.get(p, "")
-        out[p] = mask_key(val) if isinstance(val, str) else None
+    for name in state.external_providers:
+        credential: ProviderCredential | None = state.credentials.get(name)
+        out[name] = mask_key(credential.api_key) if credential else None
     return out

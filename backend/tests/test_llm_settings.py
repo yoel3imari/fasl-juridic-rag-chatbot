@@ -1,9 +1,20 @@
-"""LLM settings persistence: file store + settings router + chat memory."""
+"""LLM settings persistence: SQLite store + settings router + chat memory.
+
+The store is the SQLite one, so the fixture points **both** inputs at one tmp
+directory: ``DATABASE_URL`` (where settings live) and ``FASL_STORAGE_DIR`` (the
+legacy JSON that is imported exactly once). ``settings_engine._reset_engine_cache``
+on both sides of every test is what keeps two tmp databases from sharing an
+engine. API keys in here are test doubles; no assertion prints one.
+"""
 
 from __future__ import annotations
 
 import json
 import os
+import sqlite3
+import threading
+from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -12,15 +23,38 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.main import app
 from app.repositories import settings as settings_store
+from app.repositories import settings_engine
 
 
 @pytest.fixture()
-def isolated_storage(tmp_path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("FASL_STORAGE_DIR", str(tmp_path))
+def isolated_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+    """Redirect the store's database and its one-shot import source into tmp_path."""
+    storage = tmp_path / "storage"
+    storage.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("FASL_STORAGE_DIR", str(storage))
+    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'matters.db'}")
+    settings_engine._reset_engine_cache()
     yield tmp_path
+    settings_engine._reset_engine_cache()
 
 
-def test_save_load_roundtrip(isolated_storage) -> None:
+def _marker(db_path: Path) -> str | None:
+    """Read the one-shot import marker with raw sqlite3 (no ORM in the way)."""
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute("SELECT json_imported_at FROM llm_active_settings").fetchone()
+    return None if row is None else row[0]
+
+
+def _write_legacy(directory: Path, payload: dict[str, Any]) -> Path:
+    path = directory / "llm_settings.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def test_save_load_roundtrip(isolated_store: Path) -> None:
+    # Given: an empty store.
+    # When: a provider, a model, and one key are saved.
+    # Then: a fresh load answers all three, and only that provider has a key.
     settings_store.save_llm_settings(
         provider="openai", model="gpt-4o", api_keys={"openai": "sk-test-1234abcd"}
     )
@@ -33,15 +67,20 @@ def test_save_load_roundtrip(isolated_storage) -> None:
     assert settings_store.has_api_key("groq") is False
 
 
-def test_file_created_with_0600(isolated_storage) -> None:
+def test_database_created_with_0600(isolated_store: Path) -> None:
+    # Given: a store whose database file does not exist yet.
+    # When: the first save creates it.
+    # Then: the file is owner-only -- it holds API keys, like the JSON file was.
     settings_store.save_llm_settings(provider="ollama", model="llama3.2")
-    path = settings_store.get_settings_path()
-    assert path.exists()
-    mode = oct(os.stat(path).st_mode & 0o777)
-    assert mode == "0o600"
+    database = isolated_store / "matters.db"
+    assert database.exists()
+    assert oct(os.stat(database).st_mode & 0o777) == "0o600"
 
 
-def test_empty_string_deletes_key(isolated_storage) -> None:
+def test_empty_string_deletes_key(isolated_store: Path) -> None:
+    # Given: a stored key.
+    # When: it is cleared with "" and again with None, and set in between.
+    # Then: an empty or None value always leaves no key behind.
     settings_store.save_llm_settings(api_keys={"groq": "gsk-secret"})
     assert settings_store.has_api_key("groq") is True
     settings_store.save_llm_settings(api_keys={"groq": ""})
@@ -51,7 +90,10 @@ def test_empty_string_deletes_key(isolated_storage) -> None:
     assert settings_store.has_api_key("groq") is False
 
 
-def test_masked_status(isolated_storage) -> None:
+def test_masked_status(isolated_store: Path) -> None:
+    # Given: one stored key.
+    # When: the masked views are built from llm_providers.kind='external'.
+    # Then: only that provider reports True / a mask, and the raw key never leaks.
     settings_store.save_llm_settings(api_keys={"openai": "sk-test-1234abcd"})
     status = settings_store.keys_status()
     assert status["openai"] is True
@@ -62,25 +104,135 @@ def test_masked_status(isolated_storage) -> None:
     assert "sk-test-1234abcd" not in json.dumps(masked)
 
 
-def test_corrupt_json_returns_defaults(isolated_storage) -> None:
-    path = settings_store.get_settings_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
+def test_missing_database_returns_defaults(isolated_store: Path) -> None:
+    # Given: a database that has never been written.
+    # When: settings are loaded.
+    # Then: defaults, not an error -- the contract a missing JSON file had.
+    loaded = settings_store.load_llm_settings()
+    assert loaded["provider"] is None
+    assert loaded["model"] is None
+
+
+def test_corrupt_legacy_json_returns_defaults_and_stamps_marker(isolated_store: Path) -> None:
+    # Given: an unparseable legacy JSON file.
+    # When: settings are loaded twice.
+    # Then: both loads answer defaults and the one-shot marker is stamped, so the
+    # broken file is never retried.
+    path = _write_legacy(isolated_store / "storage", {})
     path.write_text("{not valid json", encoding="utf-8")
-    loaded = settings_store.load_llm_settings()
-    assert loaded["provider"] is None
-    assert loaded["model"] is None
+    assert settings_store.load_llm_settings()["provider"] is None
+    assert _marker(isolated_store / "matters.db") is not None
     assert settings_store.has_api_key("openai") is False
+    assert settings_store.load_llm_settings()["provider"] is None
 
 
-def test_missing_file_returns_defaults(isolated_storage) -> None:
+def test_non_dict_legacy_json_returns_defaults(isolated_store: Path) -> None:
+    # Given: a legacy JSON file holding a list, not an object.
+    # When: settings are loaded.
+    # Then: defaults, and the marker is still stamped.
+    _write_legacy(isolated_store / "storage", {})
+    (isolated_store / "storage" / "llm_settings.json").write_text("[1, 2, 3]", encoding="utf-8")
+    assert settings_store.load_llm_settings()["model"] is None
+    assert _marker(isolated_store / "matters.db") is not None
+
+
+def test_legacy_json_imported_once_and_never_rewritten(isolated_store: Path) -> None:
+    # Given: a legacy JSON holding a provider, a model, and a key.
+    path = _write_legacy(
+        isolated_store / "storage",
+        {"provider": "openrouter", "model": "legacy/model", "api_keys": {"groq": "gsk-legacy"}},
+    )
+    before = (path.read_bytes(), path.stat().st_mtime_ns)
+    # When: the first load imports it, then the key is cleared and read again.
+    assert settings_store.load_llm_settings()["provider"] == "openrouter"
+    assert settings_store.get_api_key("groq") == "gsk-legacy"
+    settings_store.save_llm_settings(api_keys={"groq": ""})
+    # Then: the clear sticks (the marker blocks a second import) and the file is
+    # untouched on disk -- bytes and mtime both.
+    assert settings_store.has_api_key("groq") is False
+    assert settings_store.load_llm_settings()["provider"] == "openrouter"
+    assert _marker(isolated_store / "matters.db") is not None
+    assert (path.read_bytes(), path.stat().st_mtime_ns) == before
+
+
+def test_engine_cache_isolates_two_databases(
+    isolated_store: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Given: one store written into database A.
+    settings_store.save_llm_settings(provider="openai", model="gpt-4o")
+    # When: DATABASE_URL is repointed at database B, then back at A.
+    other = isolated_store / "other.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{other}")
+    # Then: B answers defaults while A keeps its row -- the cache is keyed by URL.
+    assert settings_store.load_llm_settings()["provider"] is None
+    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{isolated_store / 'matters.db'}")
+    assert settings_store.load_llm_settings()["provider"] == "openai"
+    assert settings_store.load_llm_settings()["model"] == "gpt-4o"
+
+
+def test_memory_database_url_is_refused(
+    isolated_store: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Given: an in-memory DATABASE_URL.
+    monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+    # When: the store is read.
+    # Then: a RuntimeError naming the reason -- every connection would be a
+    # different, empty database, so settings would silently vanish.
+    with pytest.raises(RuntimeError, match="in-memory"):
+        settings_store.load_llm_settings()
+    with pytest.raises(RuntimeError, match="in-memory"):
+        settings_store.save_llm_settings(provider="openai")
+
+
+def test_database_deleted_mid_run_degrades_to_defaults(isolated_store: Path) -> None:
+    # Given: a populated store whose database file then disappears.
+    settings_store.save_llm_settings(provider="openai", model="gpt-4o")
+    (isolated_store / "matters.db").unlink()
+    settings_engine._reset_engine_cache()
+    # When: settings are read again.
+    # Then: defaults, not an exception -- a fresh process on a lost database sees
+    # the same thing.
     loaded = settings_store.load_llm_settings()
     assert loaded["provider"] is None
     assert loaded["model"] is None
 
 
-def test_get_put_llm_settings(isolated_storage) -> None:
+def test_concurrent_reads_never_report_a_locked_database(isolated_store: Path) -> None:
+    # Given: a populated store.
+    settings_store.save_llm_settings(
+        provider="groq", model="llama-3.3-70b-versatile", api_keys={"groq": "gsk-concurrent"}
+    )
+    failures: list[str] = []
+
+    def _read() -> None:
+        try:
+            for _ in range(25):
+                settings_store.load_llm_settings()
+                settings_store.keys_status()
+                settings_store.masked_keys()
+        except Exception as exc:  # noqa: BLE001 - the assertion reports the message
+            failures.append(f"{type(exc).__name__}: {exc}")
+
+    # When: eight threads read (and one writes) the same database at once.
+    threads = [threading.Thread(target=_read) for _ in range(7)]
+    threads.append(threading.Thread(target=lambda: settings_store.save_llm_settings(model="m2")))
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=60)
+    # Then: nobody is still running and no thread saw "database is locked" --
+    # busy_timeout + a short BEGIN IMMEDIATE is what buys that.
+    assert [t.name for t in threads if t.is_alive()] == []
+    assert failures == []
+    assert "locked" not in " ".join(failures)
+
+
+def test_get_put_llm_settings(isolated_store: Path) -> None:
+    # Given: the settings router.
     client = TestClient(app)
+    # When: the current settings are read.
     resp = client.get("/api/v1/settings/llm")
+    # Then: the documented response shape is there.
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert "current_provider" in body
@@ -89,6 +241,7 @@ def test_get_put_llm_settings(isolated_storage) -> None:
     assert "keys_status" in body
     assert "masked_keys" in body
 
+    # When: a provider, model, and key are written.
     put = client.put(
         "/api/v1/settings/llm",
         json={
@@ -97,6 +250,7 @@ def test_get_put_llm_settings(isolated_storage) -> None:
             "api_keys": {"openai": "sk-live-9999wxyz"},
         },
     )
+    # Then: the response echoes them, masks the key, and never echoes it raw.
     assert put.status_code == 200, put.text
     data = put.json()
     assert data["current_provider"] == "openai"
@@ -110,29 +264,37 @@ def test_get_put_llm_settings(isolated_storage) -> None:
     assert get2.json()["current_model"] == "gpt-4o"
 
 
-def test_put_rejects_unknown_provider(isolated_storage) -> None:
+def test_put_rejects_unknown_provider(isolated_store: Path) -> None:
+    # Given: an unknown provider name.
     client = TestClient(app)
+    # When: it is PUT.
     resp = client.put("/api/v1/settings/llm", json={"provider": "skynet"})
+    # Then: 422 -- rejected at the boundary, never stored.
     assert resp.status_code == 422
 
 
-def test_put_rejects_bad_model(isolated_storage) -> None:
+def test_put_rejects_bad_model(isolated_store: Path) -> None:
+    # Given: a model with whitespace and an empty model.
     client = TestClient(app)
+    # When: each is PUT.
     resp = client.put("/api/v1/settings/llm", json={"model": "has space"})
-    assert resp.status_code == 422
     resp2 = client.put("/api/v1/settings/llm", json={"model": ""})
+    # Then: both are 422.
+    assert resp.status_code == 422
     assert resp2.status_code == 422
 
 
-def test_put_rejects_unknown_key_provider(isolated_storage) -> None:
+def test_put_rejects_unknown_key_provider(isolated_store: Path) -> None:
+    # Given: an api_keys entry for a provider outside the external registry.
     client = TestClient(app)
+    # When: it is PUT.
     resp = client.put("/api/v1/settings/llm", json={"api_keys": {"skynet": "x"}})
+    # Then: 422.
     assert resp.status_code == 422
 
 
-def test_agent_injects_stored_keys(
-    isolated_storage, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_agent_injects_stored_keys(isolated_store: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Given: a key stored in the database and no matching env vars.
     settings_store.save_llm_settings(api_keys={"openai": "sk-inject-abcd"})
     for var in ("OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
         monkeypatch.delenv(var, raising=False)
@@ -146,14 +308,17 @@ def test_agent_injects_stored_keys(
             self.model_name = model_string
 
     monkeypatch.setattr("pydantic_ai.Agent", _FakeAgent)
+    # When: an agent is built for that provider.
     agent = agent_mod.get_agent(provider="openai", model="gpt-4o")
+    # Then: the stored key is injected into the environment.
     assert agent.model_name == "openai:gpt-4o"
     assert os.environ.get("OPENAI_API_KEY") == "sk-inject-abcd"
 
 
 def test_agent_does_not_override_existing_env(
-    isolated_storage, monkeypatch: pytest.MonkeyPatch
+    isolated_store: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # Given: both a stored key and an env key for the same provider.
     settings_store.save_llm_settings(api_keys={"groq": "gsk-stored"})
     monkeypatch.setenv("GROQ_API_KEY", "gsk-env")
     from app.infrastructure.llm import agent as agent_mod
@@ -163,13 +328,16 @@ def test_agent_does_not_override_existing_env(
             self.model_name = model_string
 
     monkeypatch.setattr("pydantic_ai.Agent", _FakeAgent)
+    # When: an agent is built.
     agent_mod.get_agent(provider="groq", model="llama-3.3-70b-versatile")
+    # Then: env wins -- the precedence get_agent documents.
     assert os.environ.get("GROQ_API_KEY") == "gsk-env"
 
 
 def test_agent_injects_google_both_vars(
-    isolated_storage, monkeypatch: pytest.MonkeyPatch
+    isolated_store: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # Given: a stored google key and neither env var set.
     settings_store.save_llm_settings(api_keys={"google": "gem-key-1234"})
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
@@ -180,14 +348,14 @@ def test_agent_injects_google_both_vars(
             self.model_name = model_string
 
     monkeypatch.setattr("pydantic_ai.Agent", _FakeAgent)
+    # When: an agent is built for google.
     agent_mod.get_agent(provider="google", model="gemini-2.0-flash")
+    # Then: both spellings receive the stored key.
     assert os.environ.get("GEMINI_API_KEY") == "gem-key-1234"
     assert os.environ.get("GOOGLE_API_KEY") == "gem-key-1234"
 
 
-def test_chat_remembers_last_used(
-    isolated_storage, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_chat_remembers_last_used(isolated_store: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """POST /api/v1/chat persists provider/model server-side (store update)."""
     import anyio
 
@@ -282,12 +450,14 @@ def test_chat_remembers_last_used(
         app.dependency_overrides.clear()
         anyio.run(engine.dispose)
 
+    # Then: the chat provider/model landed in the settings store.
     stored = settings_store.load_llm_settings()
     assert stored["provider"] == "openai"
     assert stored["model"] == "gpt-4o-mini"
 
 
-def test_put_and_get_llm_settings_base_urls(isolated_storage) -> None:
+def test_put_and_get_llm_settings_base_urls(isolated_store: Path) -> None:
+    # Given: a base-URL override PUT for a provider with no API key.
     client = TestClient(app)
     resp = client.put(
         "/api/v1/settings/llm",
@@ -299,47 +469,46 @@ def test_put_and_get_llm_settings_base_urls(isolated_storage) -> None:
             },
         },
     )
+    # Then: both the PUT response and a later GET report it.
     assert resp.status_code == 200
     data = resp.json()
     assert data["current_provider"] == "groq"
     assert data["current_model"] == "llama-3.3-70b-versatile"
     assert data["base_urls"]["groq"] == "https://api.groq.com/openai/v1"
 
-    # Verify GET also returns base_urls
     get_resp = client.get("/api/v1/settings/llm")
     assert get_resp.status_code == 200
     assert get_resp.json()["base_urls"]["groq"] == "https://api.groq.com/openai/v1"
+    assert settings_store.get_base_url("groq") == "https://api.groq.com/openai/v1"
 
 
-def test_post_llm_test_connection_invalid_provider(isolated_storage) -> None:
-    client = TestClient(app)
-    resp = client.post(
-        "/api/v1/settings/llm/test",
-        json={"provider": "invalid_provider", "model": "any-model"},
+def test_clearing_a_base_url_removes_it(isolated_store: Path) -> None:
+    # Given: two stored base URLs.
+    settings_store.save_llm_settings(
+        base_urls={
+            "groq": "https://api.groq.com/openai/v1",
+            "ollama": "http://localhost:11434/v1",
+        }
     )
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["success"] is False
-    assert "Unknown provider" in data["message"]
+    # When: one is cleared with an empty value.
+    settings_store.save_llm_settings(base_urls={"groq": ""})
+    # Then: only that one is gone; the other survives the merge.
+    assert settings_store.get_base_url("groq") is None
+    assert settings_store.get_base_url("ollama") == "http://localhost:11434/v1"
+    assert "groq" not in settings_store.base_urls()
 
 
-def test_post_llm_test_connection_mocked(isolated_storage, respx_mock) -> None:
-    respx_mock.get("https://api.groq.com/openai/v1/models").respond(
-        status_code=200, json={"data": [{"id": "llama-3.3-70b-versatile"}]}
-    )
-    client = TestClient(app)
-    resp = client.post(
-        "/api/v1/settings/llm/test",
-        json={
-            "provider": "groq",
-            "model": "llama-3.3-70b-versatile",
-            "base_url": "https://api.groq.com/openai/v1",
-            "api_key": "gsk_test123",
-        },
-    )
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["success"] is True
-    assert "Connected successfully" in data["message"]
-    assert data["latency_ms"] is not None
-
+def test_a_cleared_row_never_resurrects_the_legacy_file(isolated_store: Path) -> None:
+    # Given: a legacy JSON imported once, then a deliberate clear of the provider.
+    _write_legacy(isolated_store / "storage", {"provider": "openrouter", "model": "legacy/model"})
+    assert settings_store.load_llm_settings()["provider"] == "openrouter"
+    settings_store.save_llm_settings(api_keys={"openrouter": "sk-cleared"})
+    settings_store.save_llm_settings(api_keys={"openrouter": ""})
+    # When: settings are read again after the marker row is re-created empty by a
+    # save that clears the last key.
+    settings_store.save_llm_settings(model="gpt-4o")
+    loaded = settings_store.load_llm_settings()
+    # Then: the marker is still set, so nothing comes back from the file.
+    assert _marker(isolated_store / "matters.db") is not None
+    assert loaded["model"] == "gpt-4o"
+    assert settings_store.has_api_key("openrouter") is False
