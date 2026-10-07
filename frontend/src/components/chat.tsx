@@ -12,7 +12,6 @@ import {
   type SseEvent,
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
-import { CitationDomainBadge } from "./citation-domain-badge";
 import { MarkdownRenderer } from "./markdown-renderer";
 import { ModelSwitcherModal } from "./model-switcher-modal";
 import { Button } from "@/components/ui/button";
@@ -44,12 +43,6 @@ interface Message {
   error?: string;
 }
 
-function eventKey(c: Citation, i: number): string {
-  return c.domain === "matter"
-    ? `m-${c.document_id}-${c.page}-${c.span[0]}-${i}`
-    : `a-${c.source}-${c.version}-${c.article_or_section}-${i}`;
-}
-
 const PROVIDER_STORAGE_KEY = "fasl_llm_provider";
 const MODEL_STORAGE_KEY = "fasl_llm_model";
 
@@ -57,14 +50,22 @@ interface ChatProps {
   matterId: number | null;
   conversationId?: number | null;
   onConversationChange?: (id: number | null) => void;
-  onSelectCitation?: (citation: Citation) => void;
+  /** Chunks are browsed in the right panel, so the stream never renders them. */
+  onRetrievedChunks?: (chunks: Citation[]) => void;
+  /**
+   * Fired once per live retrieval, when chunks first land. History replay is
+   * deliberately excluded: re-opening a past conversation must not yank the
+   * reader out of whatever right-panel tab they were on.
+   */
+  onChunksRetrieved?: () => void;
 }
 
 export function Chat({
   matterId,
   conversationId = null,
   onConversationChange,
-  onSelectCitation,
+  onRetrievedChunks,
+  onChunksRetrieved,
 }: ChatProps) {
   const { t } = useI18n();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -222,6 +223,21 @@ export function Chat({
     scrollToBottom();
   }, [messages, busy, activity]);
 
+  // The stream rewrites `messages` on every token, so lifting a fresh array
+  // each time would re-render the whole right panel per token. Citations keep
+  // their identity across tokens (they only land on a `citations` event), so
+  // reference-equality is enough to gate the lift on real retrieval changes.
+  const liftedChunksRef = useRef<Citation[] | null>(null);
+  useEffect(() => {
+    const chunks = messages.flatMap((m) => m.citations);
+    const previous = liftedChunksRef.current;
+    if (previous && previous.length === chunks.length && previous.every((c, i) => c === chunks[i])) {
+      return;
+    }
+    liftedChunksRef.current = chunks;
+    onRetrievedChunks?.(chunks);
+  }, [messages, onRetrievedChunks]);
+
   const handleCopy = (text: string, index: number) => {
     navigator.clipboard.writeText(text);
     setCopiedIndex(index);
@@ -266,8 +282,10 @@ export function Chat({
         });
 
       const onEvent = (ev: SseEvent) => {
-        if (ev.type === "citations") citations = ev.citations;
-        else if (ev.type === "token") text += ev.text;
+        if (ev.type === "citations") {
+          citations = ev.citations;
+          if (citations.length > 0) onChunksRetrieved?.();
+        } else if (ev.type === "token") text += ev.text;
         else if (ev.type === "done") {
           notFound = ev.not_found ?? false;
           outOfScope = ev.out_of_scope ?? false;
@@ -316,7 +334,7 @@ export function Chat({
         setBusy(false);
       }
     },
-    [input, busy, matterId, conversationId, t, provider, model, onConversationChange],
+    [input, busy, matterId, conversationId, t, provider, model, onConversationChange, onChunksRetrieved],
   );
 
   return (
@@ -475,20 +493,6 @@ export function Chat({
                   <div className="flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive font-medium">
                     <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                     <span>{m.error}</span>
-                  </div>
-                )}
-
-                {/* Grounded Citations Badges */}
-                {m.citations.length > 0 && (
-                  <div className="pt-1 flex flex-wrap gap-1.5">
-                    {m.citations.map((c, j) => (
-                      <CitationDomainBadge
-                        key={eventKey(c, j)}
-                        citation={c}
-                        anchorId={`claim-${i}-${j}`}
-                        onSelect={() => onSelectCitation?.(c)}
-                      />
-                    ))}
                   </div>
                 )}
 

@@ -27,6 +27,8 @@ export interface MatterCitation {
   page: number;
   span: [number, number];
   faithful_ref: string;
+  /** Truncated cited text. Optional: absent on citations persisted before it shipped. */
+  excerpt?: string;
 }
 
 export interface AuthorityCitation {
@@ -38,6 +40,8 @@ export interface AuthorityCitation {
   doc_date: string | null;
   language: string;
   article_or_section: string;
+  /** Truncated cited text. Optional: absent on citations persisted before it shipped. */
+  excerpt?: string;
 }
 
 export type Citation = MatterCitation | AuthorityCitation;

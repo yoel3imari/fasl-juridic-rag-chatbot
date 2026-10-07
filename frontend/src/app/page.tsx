@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { AnalysisPanel } from "@/components/analysis-panel";
 import { Chat } from "@/components/chat";
 import { DraftsPanel } from "@/components/drafts-panel";
 import { MatterBar } from "@/components/matter-bar";
 import { Upload } from "@/components/upload";
 import { SourceInspector } from "@/components/source-inspector";
+import { RetrievedChunksPanel } from "@/components/retrieved-chunks-panel";
 import { CommandPalette } from "@/components/command-palette";
 import { NewMatterModal } from "@/components/new-matter-modal";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -28,12 +29,15 @@ export default function Home() {
   const [newMatterModalOpen, setNewMatterModalOpen] = useState(false);
   const [activeCitation, setActiveCitation] = useState<Citation | null>(null);
   const [activeSpan, setActiveSpan] = useState<SpanRef | null>(null);
+  const [retrievedChunks, setRetrievedChunks] = useState<Citation[]>([]);
 
   const handleSelectCitation = (citation: Citation) => {
     setActiveCitation(citation);
     setActiveSpan(null);
     setActiveRightTab("source");
   };
+
+  const handleChunksRetrieved = useCallback(() => setActiveRightTab("source"), []);
 
   const handleSelectSpan = (span: SpanRef) => {
     setActiveSpan(span);
@@ -86,7 +90,8 @@ export default function Home() {
             matterId={matterId}
             conversationId={conversationId}
             onConversationChange={setConversationId}
-            onSelectCitation={handleSelectCitation}
+            onRetrievedChunks={setRetrievedChunks}
+            onChunksRetrieved={handleChunksRetrieved}
           />
         </div>
 
@@ -133,10 +138,16 @@ export default function Home() {
               </TabsContent>
 
               <TabsContent value="source" className="mt-0 focus-visible:outline-none">
-                <SourceInspector
-                  activeCitation={activeCitation}
-                  activeSpan={activeSpan}
-                />
+                <div className="space-y-3">
+                  <RetrievedChunksPanel
+                    chunks={retrievedChunks}
+                    onSelect={handleSelectCitation}
+                  />
+                  <SourceInspector
+                    activeCitation={activeCitation}
+                    activeSpan={activeSpan}
+                  />
+                </div>
               </TabsContent>
             </div>
           </Tabs>
