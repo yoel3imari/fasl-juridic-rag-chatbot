@@ -44,3 +44,7 @@ backend/quality_gate.json
 
 # Per-query retrieval traces (private matter evidence, never commit)
 backend/data/output/
+
+# Ignored documentation tree and local scratch backups (never commit)
+docs
+backend/data/backup-scratch/
