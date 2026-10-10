@@ -41,7 +41,7 @@ import urllib.request
 
 from app.cli.library.parity_sentences import PARITY_SENTENCES, PARITY_SENTENCES_SHA256
 
-MODEL = "granite-embedding-107m"
+MODEL = "granite-embedding-107m-multilingual"
 EXPECTED_DIM = 384
 MIN_COSINE = 0.99
 FAIL_EXIT = 2
@@ -49,30 +49,17 @@ FAIL_EXIT = 2
 
 def _repo_root() -> str:
     here = os.path.dirname(os.path.abspath(__file__))
-    return os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.dirname(here)))
-    )
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(here))))
 
 
 def _default_evidence_dir() -> str:
     return os.path.join(_repo_root(), ".omo", "evidence", "law-corpus-bulk-ingest")
 
 
-def _git_sha() -> str:
-    try:
-        out = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-            cwd=_repo_root(),
-            timeout=15,
-        )
-        sha = out.stdout.strip()
-        if out.returncode == 0 and sha:
-            return sha
-    except Exception:
-        pass
-    return "unknown"
+def _git_sha(model: str = MODEL, dim: int = EXPECTED_DIM) -> str:
+    from app.cli.library.fingerprint import compute_pipeline_fingerprint
+
+    return compute_pipeline_fingerprint(model=model, dim=dim)
 
 
 def _now() -> str:
@@ -90,9 +77,7 @@ def crispembed_vectors(base_url: str, model: str) -> list[list[float]]:
         data = json.load(resp)
     items = data.get("data", [])
     if len(items) != len(PARITY_SENTENCES):
-        raise RuntimeError(
-            f"expected {len(PARITY_SENTENCES)} vectors, got {len(items)}"
-        )
+        raise RuntimeError(f"expected {len(PARITY_SENTENCES)} vectors, got {len(items)}")
     return [list(map(float, it["embedding"])) for it in items]
 
 
@@ -126,9 +111,7 @@ def load_vectors_cache(path: str, kind: str) -> dict:
         raise RuntimeError(f"{kind} cache sentences mismatch (stale/tampered): {path}")
     vectors = payload.get("vectors", [])
     if len(vectors) != len(PARITY_SENTENCES):
-        raise RuntimeError(
-            f"{kind} cache has n={len(vectors)}, want {len(PARITY_SENTENCES)}"
-        )
+        raise RuntimeError(f"{kind} cache has n={len(vectors)}, want {len(PARITY_SENTENCES)}")
     if any(len(v) != EXPECTED_DIM for v in vectors):
         raise RuntimeError(f"{kind} cache dim mismatch, want {EXPECTED_DIM}")
     return payload
@@ -164,9 +147,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.write_cache:
         try:
-            payload = write_crispembed_cache(
-                args.write_cache, args.crispembed_url, args.model
-            )
+            payload = write_crispembed_cache(args.write_cache, args.crispembed_url, args.model)
         except Exception as e:
             print(f"FAIL: crispembed capture failed: {e}", file=sys.stderr)
             return FAIL_EXIT
@@ -193,9 +174,7 @@ def main(argv: list[str] | None = None) -> int:
         return FAIL_EXIT
 
     if crisp["dim"] != EXPECTED_DIM or ref["dim"] != EXPECTED_DIM:
-        print(
-            f"FAIL: dim mismatch crisp={crisp['dim']} ref={ref['dim']}", file=sys.stderr
-        )
+        print(f"FAIL: dim mismatch crisp={crisp['dim']} ref={ref['dim']}", file=sys.stderr)
         return FAIL_EXIT
 
     per_sample = [cosine(a, b) for a, b in zip(crisp["vectors"], ref["vectors"])]
@@ -205,6 +184,7 @@ def main(argv: list[str] | None = None) -> int:
         "model": args.model,
         "dim": EXPECTED_DIM,
         "git_sha": git_sha,
+        "pipeline_fingerprint": git_sha,
         "produced_at": _now(),
         "n": len(per_sample),
         "mean_cosine": mean_cosine,
@@ -230,9 +210,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return FAIL_EXIT
     if mean_cosine < args.min_cosine:
-        print(
-            f"FAIL: mean_cosine {mean_cosine:.6f} < {args.min_cosine}", file=sys.stderr
-        )
+        print(f"FAIL: mean_cosine {mean_cosine:.6f} < {args.min_cosine}", file=sys.stderr)
         return FAIL_EXIT
     return 0
 

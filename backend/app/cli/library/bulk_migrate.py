@@ -59,26 +59,16 @@ class MigrationRefused(Exception):
     """Preflight or safety-gate refusal: exit non-zero BEFORE any delete."""
 
 
+from app.cli.library.fingerprint import (
+    compute_pipeline_fingerprint,
+    live_git_sha,
+    matches_preflight_sha,
+)
+
+
 def _repo_root() -> str:
     here = os.path.dirname(os.path.abspath(__file__))
     return os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(here))))
-
-
-def live_git_sha() -> str:
-    try:
-        out = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-            cwd=_repo_root(),
-            timeout=15,
-        )
-        sha = out.stdout.strip()
-        if out.returncode == 0 and sha:
-            return sha
-    except Exception:
-        pass
-    return "unknown"
 
 
 def _now() -> str:
@@ -110,8 +100,8 @@ def preflight(
     """Validate BOTH artifacts against the live config. Raises MigrationRefused.
 
     Requires quality_gate ``pass:true``, parity ``mean_cosine>=0.99``,
-    BOTH ``git_sha`` equal to the live HEAD, and both ``model``/``dim``
-    matching the live ``EMBEDDING_MODEL``/``EMBEDDING_DIM``.
+    BOTH ``git_sha`` matching live pipeline fingerprint or HEAD, and both
+    ``model``/``dim`` matching the live ``EMBEDDING_MODEL``/``EMBEDDING_DIM``.
     """
     problems: list[str] = []
     if gate.get("pass") is not True:
@@ -120,7 +110,8 @@ def preflight(
         problems.append(f"quality_gate model={gate.get('model')!r} != live {model!r}")
     if gate.get("dim") != dim:
         problems.append(f"quality_gate dim={gate.get('dim')!r} != live {dim!r}")
-    if gate.get("git_sha") != sha:
+    gate_sha = gate.get("pipeline_fingerprint") or gate.get("git_sha")
+    if not matches_preflight_sha(gate_sha, model=model, dim=dim, live_sha=sha):
         problems.append(
             f"quality_gate git_sha={gate.get('git_sha')!r} != live HEAD {sha!r} (stale)"
         )
@@ -131,7 +122,8 @@ def preflight(
         problems.append(f"parity model={parity.get('model')!r} != live {model!r}")
     if parity.get("dim") != dim:
         problems.append(f"parity dim={parity.get('dim')!r} != live {dim!r}")
-    if parity.get("git_sha") != sha:
+    parity_sha = parity.get("pipeline_fingerprint") or parity.get("git_sha")
+    if not matches_preflight_sha(parity_sha, model=model, dim=dim, live_sha=sha):
         problems.append(f"parity git_sha={parity.get('git_sha')!r} != live HEAD {sha!r} (stale)")
     if problems:
         raise MigrationRefused("; ".join(problems))
@@ -406,7 +398,7 @@ async def run_migrate(args: argparse.Namespace) -> dict:
     parity = load_gate_artifact(args.parity, "parity")
     model = settings.EMBEDDING_MODEL
     dim = settings.EMBEDDING_DIM
-    sha = live_git_sha()
+    sha = compute_pipeline_fingerprint(model=model, dim=dim)
     gate_summary = preflight(gate, parity, model=model, dim=dim, sha=sha)
 
     qdrant_url = args.qdrant_url or settings.QDRANT_URL
@@ -439,6 +431,7 @@ async def run_migrate(args: argparse.Namespace) -> dict:
                 "skipped_recreate": True,
                 "reason": "winner dim already live",
                 "counts": {n: post[n]["points_count"] for n in COLLECTIONS},
+                "pipeline_fingerprint": sha,
             },
         )
         return {
@@ -532,6 +525,7 @@ async def run_migrate(args: argparse.Namespace) -> dict:
             ],
             "pre_counts": manifest["pre_counts"],
             "post_counts": manifest["post_counts"],
+            "pipeline_fingerprint": sha,
         },
     )
     manifest["manifest_path"] = manifest_path

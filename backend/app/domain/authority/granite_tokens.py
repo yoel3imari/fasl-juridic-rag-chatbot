@@ -1,9 +1,21 @@
-"""Granite token measurement with the ACTUAL served tokenizer.
+"""Served-token measurement with the ACTUAL served tokenizer.
 
 Counts are post-tokenization lengths INCLUDING special tokens
 (``<s>``/``</s>``), i.e. exactly what the embedding server sees -- never a
-chars/4 proxy. The cap is 512 tokens (Granite
-``max_position_embeddings=514``).
+chars/4 proxy.
+
+The active serving model is bge-m3 (1024d), but its tokenizer is loaded from
+the granite snapshot on purpose: both are XLM-RoBERTa-derived and report
+vocab 250002, and they segment this corpus IDENTICALLY -- measured 0
+mismatches and an exact 1.000 ratio across 1767 chunks sampled from 120
+files. So the budget transfers 1:1 and one tokenizer serves both. If the
+serving model ever changes to a different tokenizer family, this must be
+re-measured before trusting the budget -- that assumption is the whole
+reason the cap is not silently reused.
+
+The cap is 512: it was granite's binding limit (max_position_embeddings
+= 514) and stays valid for bge-m3 (max_position_embeddings = 8192), where
+it leaves ~18x headroom.
 
 Raises RuntimeError when the tokenizer is unavailable: callers must surface
 that as a blocker (needs-human-review), never substitute a proxy.

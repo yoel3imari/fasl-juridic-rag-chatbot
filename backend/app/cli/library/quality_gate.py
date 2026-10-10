@@ -32,6 +32,15 @@ Hard rule: if granite recall@10 is >5.0 points below bge-m3, ``pass=false``
 and the pipeline stays on bge-m3. ``score`` refuses to run while BOTH
 services answer health (concurrency guard) and on missing/tampered caches
 (a bad cache can never false-pass). Exit 0 iff ``pass``; exit 2 otherwise.
+
+The served-token budget (``SERVED_SAFE_TOKENS`` / ``served_estimate`` /
+``NEWLINE_WEIGHT``) is NOT owned here: it lives in the pure domain
+(``app.domain.authority.served_budget``) and is re-exported below unchanged.
+It was duplicated here while the chunker enforced a looser cap (512 raw
+Granite tokens), and that disagreement silently dropped every chunk in the
+451..512 band at embed time -- 62% of the created corpus. The gate samples
+on the SAME budget the splitter now cuts to, so the two can never drift
+apart again.
 """
 
 from __future__ import annotations
@@ -43,9 +52,19 @@ import hashlib
 import json
 import math
 import os
-import subprocess
 import sys
 import urllib.request
+
+# Served-context budget: single-sourced in the pure domain and re-exported
+# below so existing importers of ``quality_gate.SERVED_SAFE_TOKENS`` /
+# ``quality_gate.served_estimate`` keep working untouched. The evidence
+# behind the value is kept with the re-export.
+from app.domain.authority.served_budget import (
+    NEWLINE_WEIGHT,
+    SERVED_SAFE_TOKENS,
+    fits_served_budget,
+    served_estimate,
+)
 
 GRANITE_MODEL = "granite-embedding-107m"
 GRANITE_DIM = 384
@@ -67,6 +86,8 @@ QUERY_LEN = 40
 
 OCR_MIN_CHARS_PER_PAGE = 20  # mirrors LIBRARY_OCR_MIN_CHARS text-layer check
 
+# --- served-context budget (RE-EXPORT, not owned here) ------------------------------
+#
 # Served-context safety: CrispEmbed-Granite DROPS the connection (no
 # server-side truncation, and a killer input can crash-loop the server) for
 # inputs past ~512 served tokens. The served tokenization counts newlines
@@ -80,17 +101,17 @@ OCR_MIN_CHARS_PER_PAGE = 20  # mirrors LIBRARY_OCR_MIN_CHARS text-layer check
 # local 491/499 with zero newlines still crashed the server (underestimate
 # >=21 tokens). The cap therefore carries a ~60-token safety margin below
 # the 512 served limit instead of sitting at 500.
-# Overlong chunks are SKIPPED and counted (never truncated: both models must
-# see identical text). Production embedder (todo 14) must handle these.
-SERVED_SAFE_TOKENS = 450
-NEWLINE_WEIGHT = 4
-
-
-def served_estimate(text: str) -> int:
-    """Conservative served-token estimate: local tokens + weighted newlines."""
-    from app.domain.authority.granite_tokens import count_granite_tokens
-
-    return count_granite_tokens(text) + NEWLINE_WEIGHT * text.count("\n")
+# Overlong input is never truncated (both models must see identical text):
+# the splitter now cuts to this budget (``article_split``) instead of the
+# looser 512 raw-token cap, and the production embedder (todo 14) refuses
+# loudly on over-budget input rather than dropping it.
+# Canonical definition + full reasoning: app.domain.authority.served_budget.
+__all__ = [
+    "NEWLINE_WEIGHT",
+    "SERVED_SAFE_TOKENS",
+    "fits_served_budget",
+    "served_estimate",
+]
 
 
 def _repo_root() -> str:
@@ -98,21 +119,10 @@ def _repo_root() -> str:
     return os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(here))))
 
 
-def _git_sha() -> str:
-    try:
-        out = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-            cwd=_repo_root(),
-            timeout=15,
-        )
-        sha = out.stdout.strip()
-        if out.returncode == 0 and sha:
-            return sha
-    except Exception:
-        pass
-    return "unknown"
+def _git_sha(model: str = GRANITE_MODEL, dim: int = GRANITE_DIM) -> str:
+    from app.cli.library.fingerprint import compute_pipeline_fingerprint
+
+    return compute_pipeline_fingerprint(model=model, dim=dim)
 
 
 def _now() -> str:
@@ -551,6 +561,7 @@ def cmd_score(args: argparse.Namespace) -> int:
         "baseline_model": BGE_MODEL,
         "baseline_dim": BGE_DIM,
         "git_sha": git_sha,
+        "pipeline_fingerprint": git_sha,
         "granite_git_sha": granite.get("git_sha"),
         "bge_git_sha": bge.get("git_sha"),
         "produced_at": _now(),

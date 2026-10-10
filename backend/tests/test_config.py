@@ -15,7 +15,7 @@ def test_required_env_keys():
 
 def test_bulk_pipeline_settings_defaults():
     """Bulk pipeline settings resolve with RAM-safe defaults."""
-    assert settings.EMBEDDING_MODEL == "granite-embedding-107m"
+    assert settings.EMBEDDING_MODEL == "granite-embedding-107m-multilingual"
     assert settings.EMBEDDING_DIM == 384
     assert settings.LIBRARY_SOURCE_DIR == "/home/xozev/Documents/legal/shortlist"
     assert settings.LIBRARY_ARTIFACT_DIR == "./data/library-artifacts"

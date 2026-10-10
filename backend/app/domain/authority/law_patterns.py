@@ -1,8 +1,9 @@
 """Law-pattern vocabulary for Moroccan statutes and decisions.
 
 Article/item boundary regexes (``المادة``/``Article`` and numbered ``الفصل``
-items), book/part/chapter heading patterns, ظهير/مرسوم/قرار/قانون header
-forms, and the explicit 8-folder -> authority-code mapping table.
+items, in both logical and bidi-reversed order), book/part/chapter heading
+patterns, ظهير/مرسوم/قرار/قانون/دستور header forms, and the explicit
+8-folder -> authority-code mapping table.
 """
 
 from __future__ import annotations
@@ -31,6 +32,9 @@ _AR_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
 ARTICLE_RE = re.compile(r"^\s*(?:المادة|Article)\s+([0-9٠-٩]+)", re.IGNORECASE)
 # A *numbered* الفصل (الفصل 1, الفصل 12) is an article-level item, not a chapter.
 FASL_ITEM_RE = re.compile(r"^\s*الفصل\s+([0-9٠-٩]+)\b")
+# دستور_2011.pdf writes item markers in VISUAL order: "5 الفصل", not "الفصل 5".
+# NFKC cannot reorder text, so the reversed form needs its own boundary regex.
+FASL_ITEM_REVERSED = re.compile(r"^\s*([0-9٠-٩]+)\s+الفصل\b")
 
 HEADING_RES = [
     (
@@ -47,9 +51,14 @@ HEADING_RES = [
     ),
 ]
 
-# ظهير/مرسوم/قرار/قانون header forms (longest alternatives first).
+# Instrument vocabulary: head word -> law_type slug ("" root files included).
+LAW_TYPE_CONSTITUTION = "constitution"
+
+# ظهير/مرسوم/قرار/قانون/دستور header forms (longest alternatives first, so a
+# prefix never shadows the longer form it contains).
 LAW_HEADER_RE = re.compile(
-    r"^\s*(القانون التنظيمي|ظهير شريف|مرسوم بقانون|قرار مشترك|ظهير|مرسوم|قرار|القانون|قانون)\b(.*)$"
+    r"^\s*(القانون التنظيمي|الدستور|دستور|ظهير شريف|مرسوم بقانون|"
+    r"قرار مشترك|ظهير|مرسوم|قرار|القانون|قانون)\b(.*)$"
 )
 _LAW_TYPE_BY_HEAD = {
     "ظهير شريف": "dahir",
@@ -61,6 +70,8 @@ _LAW_TYPE_BY_HEAD = {
     "القانون التنظيمي": "organic-law",
     "القانون": "law",
     "قانون": "law",
+    "الدستور": LAW_TYPE_CONSTITUTION,
+    "دستور": LAW_TYPE_CONSTITUTION,
 }
 
 # Wrapped header lines (e.g. "بتنفيذ القانون رقم ..." on the line after a
@@ -83,7 +94,7 @@ def item_label(line: str) -> str | None:
     m = ARTICLE_RE.match(line)
     if m:
         return f"Article {norm_digits(m.group(1))}"
-    m = FASL_ITEM_RE.match(line)
+    m = FASL_ITEM_RE.match(line) or FASL_ITEM_REVERSED.match(line)
     if m:
         return f"Fasl {norm_digits(m.group(1))}"
     return None

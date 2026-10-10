@@ -6,9 +6,9 @@ from the Arabic filenames under ``/home/xozev/Documents/legal/shortlist``
 and derives manifest-compatible ``(source, version, edition)`` provenance.
 
 Contract (see plan todo 4):
-- ``law_type`` is the LEADING instrument of the filename: القانون التنظيمي,
-  ظهير شريف, مرسوم (incl. مرسوم ملكي), قرار, قانون. A mid-name mention
-  (e.g. a مرسوم applying a قانون تنظيمي) never overrides the prefix.
+- ``law_type`` is the LEADING instrument of the filename: دستور, القانون
+  التنظيمي, ظهير شريف, مرسوم (incl. مرسوم ملكي), قرار, قانون. A mid-name
+  mention (e.g. a مرسوم applying a قانون تنظيمي) never overrides the prefix.
 - ``law_number`` is the first ``رقم <token>`` (e.g. ``1.02.298``).
 - ``hijri_date`` is the matched Hijri phrase (e.g. ``25 من رجب 1423``);
   ``gregorian_date`` is the parenthesised date or a standalone
@@ -17,7 +17,8 @@ Contract (see plan todo 4):
 - ``language`` is ``ar`` unless the name is explicitly French-labeled;
   ``edition`` is ``fr-translation`` only then, else ``ar-general``.
 - ``category`` maps the shortlist folder (incl. nested civil subfolders)
-  to one of the 8 shortlist categories.
+  to one of the 8 shortlist categories. A root-level constitution has no
+  folder to read, so its law type decides (CONSTITUTION_CATEGORY).
 - ``source`` = law type when parsed, else the folder (fallback);
   ``version`` = law number when present, else the normalized filename stem.
 - Unparseable names (no detectable law type) are QUARANTINED, never crash:
@@ -67,6 +68,21 @@ LAW_TYPE_DECREE = "مرسوم"
 LAW_TYPE_ARRETE = "قرار"
 LAW_TYPE_LAW = "قانون"
 LAW_TYPE_ORGANIC = "القانون التنظيمي"
+LAW_TYPE_CONSTITUTION = "دستور"
+
+# The constitution is filed at the shortlist ROOT, so its category cannot come
+# from a folder name. Kept out of CATEGORIES: those are the 8 subject folders
+# the coverage report counts.
+CONSTITUTION_CATEGORY = "دستور"
+
+# Leading-word spellings of the constitution in the corpus. "costitution" is
+# the misspelling baked into costitution-2011.pdf, not a guess.
+_CONSTITUTION_SPELLINGS: tuple[str, ...] = (
+    "الدستور",
+    "دستور",
+    "costitution",
+    "constitution",
+)
 
 _HIJRI_MONTHS = (
     "محرم",
@@ -108,9 +124,7 @@ def _normalize_arabic(text: str) -> str:
 _HIJRI_MONTH_ALT = "|".join(
     sorted((_normalize_arabic(m) for m in _HIJRI_MONTHS), key=len, reverse=True)
 )
-_HIJRI_RE = re.compile(
-    rf"(فاتح|\d{{1,2}})\s+(?:من\s+)?({_HIJRI_MONTH_ALT})\s+(\d{{3,4}})"
-)
+_HIJRI_RE = re.compile(rf"(فاتح|\d{{1,2}})\s+(?:من\s+)?({_HIJRI_MONTH_ALT})\s+(\d{{3,4}})")
 _LAW_NUMBER_RE = re.compile(r"رقم\s*:?\s*([A-Za-z]?\s*[_\-]?\s*\d[\d.\-–—/]*)")
 _PAREN_DATE_RE = re.compile(r"\(([^)]*\d{3,4}[^)]*)\)")
 _BARE_GREG_RE = re.compile(
@@ -142,8 +156,16 @@ def normalize_stem(filename: str, max_len: int | None = _MAX_STEM_LEN) -> str:
     return stem
 
 
-def map_category(folder: str) -> str:
-    """Map a shortlist folder (bare name or nested path) to its category."""
+def map_category(folder: str, law_type: str | None = None) -> str:
+    """Map a shortlist folder (bare name or nested path) to its category.
+
+    ``law_type`` is optional and consulted ONLY for the root (folder-less)
+    case, which is where the constitution lives: with no folder there is no
+    category to read. A file that really sits in a subject folder keeps that
+    folder's category whatever its law type.
+    """
+    if law_type == LAW_TYPE_CONSTITUTION and not folder.strip():
+        return CONSTITUTION_CATEGORY
     norm = _normalize_arabic(folder)
     for sub in CIVIL_SUBFOLDERS:
         if sub in folder or _normalize_arabic(sub) in norm:
@@ -158,6 +180,7 @@ def detect_law_type(stem: str) -> str | None:
     """Leading instrument wins; anywhere-match is the fallback."""
     norm = _normalize_arabic(stem.strip())
     prefixes = (
+        (_CONSTITUTION_SPELLINGS, LAW_TYPE_CONSTITUTION),
         (("القانون التنظيمي",), LAW_TYPE_ORGANIC),
         (("ظهير شريف", "ظهير شريف"), LAW_TYPE_DAHIR),
         (("مرسوم",), LAW_TYPE_DECREE),
@@ -220,6 +243,7 @@ class ParsedFile:
     quarantined: bool
     quarantine_reason: str | None = None
 
+
 def parse_filename(filename: str, folder: str) -> ParsedFile:
     """Parse provenance from a shortlist filename + its shortlist folder.
 
@@ -228,8 +252,8 @@ def parse_filename(filename: str, folder: str) -> ParsedFile:
     raw = filename or ""
     stem = normalize_stem(raw, max_len=None)
     short_stem = normalize_stem(raw)
-    category = map_category(folder)
     law_type = detect_law_type(stem) if stem else None
+    category = map_category(folder, law_type)
     law_number = detect_law_number(stem) if stem else None
     hijri_date = detect_hijri_date(stem) if stem else None
     gregorian_date = detect_gregorian_date(stem) if stem else None

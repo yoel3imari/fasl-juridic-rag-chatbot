@@ -26,9 +26,10 @@ from app.cli.library.bulk_migrate import (
     run_rollback,
     snapshot_one,
 )
+from app.config import settings
 
-MODEL = "granite-embedding-107m"
-DIM = 384
+MODEL = settings.EMBEDDING_MODEL
+DIM = settings.EMBEDDING_DIM
 SHA = "7b76ab5a187ae32a725a5cb8c417be28a6822d72"
 
 
@@ -83,8 +84,8 @@ def test_preflight_low_parity_refuses() -> None:
 
 def test_preflight_model_dim_mismatch_refuses() -> None:
     gate = _good_gate()
-    gate["model"] = "bge-m3"
-    gate["dim"] = 1024
+    gate["model"] = "some-other-embedder"
+    gate["dim"] = DIM + 1
     with pytest.raises(MigrationRefused, match="model="):
         preflight(gate, _good_parity(), model=MODEL, dim=DIM, sha=SHA)
 
@@ -264,7 +265,7 @@ def test_run_migrate_cold_start_creates_without_delete_or_snapshot(tmp_path, mon
     client = _Client()
     monkeypatch.setattr(mig, "_client_for", lambda url: client)
 
-    live_sha = mig.live_git_sha()
+    live_sha = mig.compute_pipeline_fingerprint(MODEL, DIM)
     gate_file = tmp_path / "gate.json"
     gate_file.write_text(json.dumps({**_good_gate(), "git_sha": live_sha}), encoding="utf-8")
     parity_file = tmp_path / "parity.json"

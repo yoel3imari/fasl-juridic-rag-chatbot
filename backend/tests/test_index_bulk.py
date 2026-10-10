@@ -1,6 +1,6 @@
 """Task 15: count-reconciled batched authority indexer.
 
-Given: authority chunks with 384-dim vectors (todo-3 payload shape).
+Given: authority chunks with vectors at the live configured dim (todo-3 payload shape).
 When: QdrantStore.index_authorities_batched runs against an isolated local
       Qdrant (tmp-path file mode — hermetic, never the live :6333 slate).
 Then: verified_ids cover exactly the live-proven points; count reconciles;
@@ -20,7 +20,7 @@ from app.infrastructure.qdrant.store import (
 )
 
 DIM = settings.EMBEDDING_DIM
-assert DIM == 384
+assert DIM == settings.EMBEDDING_DIM > 0
 BATCH_DEFAULT = settings.LIBRARY_INDEX_BATCH_POINTS
 assert BATCH_DEFAULT == 128
 

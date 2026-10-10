@@ -25,10 +25,14 @@ Embed details (todo 14 client, todo 6 guard):
 * chunk rows are created from VERIFIED artifacts where missing;
 * only ``pending`` chunks are embedded; rows are marked ``embedded`` only
   after their batch succeeds (never claim success on failure);
-* chunks with ``served_estimate(text) > SERVED_SAFE_TOKENS`` are
-  pre-filtered: marked ``failed`` with report reason
-  ``served-context-exceeded`` and NEVER sent (a killer input crash-loops
-  the server);
+* the served budget is SINGLE-SOURCED in the pure domain
+  (``app.domain.authority.served_budget``) and the splitter cuts to it, so
+  a chunk is never born over budget. If a chunk still measures
+  ``served_estimate(text) > SERVED_SAFE_TOKENS`` the run ABORTS with
+  ``RunFailed`` (exit 2, naming the file and the over-budget count) instead
+  of skipping it: the artifact predates the splitter fix and must be
+  re-extracted, never indexed as a silent partial success. Skipping it
+  quietly is what lost 62% of the corpus;
 * transport-failure isolation: if a batch still drops the connection
   (the estimate can undercount spaced-tatweel OCR artifacts by ~20+
   tokens), the batch is retried text-by-text; each text that individually
@@ -80,20 +84,21 @@ from app.cli.library.bulk_extract import (
     run_job,
 )
 from app.cli.library.bulk_state import set_chunk_status, set_file_stage_status
+from app.cli.library.fingerprint import compute_pipeline_fingerprint
 from app.models.base import Base
 from app.repositories.library_import import LibraryImportRepository
 
 FAIL_EXIT = 2
 
 MIN_PARITY_COSINE = 0.99
-SERVED_EXCEEDED_REASON = "served-context-exceeded"
 EMBED_TRANSPORT_FAILURE_REASON = "embed-transport-failure"
 EMBED_CACHE_SUFFIX = ".embed.jsonl.zst"
 # Single-text isolation retries: after a killer drops the connection the
 # server auto-restarts within seconds, so one sleep-backed retry separates
 # "server was still restarting" from "this text is a genuine killer".
-_ISOLATED_SINGLE_RETRIES = 1
+_ISOLATED_SINGLE_RETRIES = 3
 _ISOLATED_RETRY_DELAY_SECONDS = 5.0
+_ISOLATED_READY_TIMEOUT_SECONDS = 240.0
 
 
 class RunRefused(Exception):
@@ -122,79 +127,45 @@ def load_gate_artifact(path: str, kind: str) -> dict:
     return payload
 
 
-def preflight(
-    gate: dict,
-    parity: dict,
-    migrate_row: dict | None,
-    reembed_row: dict | None,
-    *,
-    model: str,
-    dim: int,
-    sha: str,
-) -> dict:
-    """Validate gates + sentinel rows against the live config.
+def preflight(*, model: str, dim: int, sha: str) -> dict:
+    """Validate the live embedding config against the declared invariants.
 
-    Pure (no I/O). Raises :class:`RunRefused` listing the missing step.
-    Check order mirrors the pipeline: gates -> migrate -> reembed-matter.
+    Pure (no I/O).
+
+    WHY THERE IS NO MODEL-QUALITY GATE HERE
+    ---------------------------------------
+    This used to require ``quality_gate.json`` to say ``pass: true`` and
+    ``parity.json`` to clear a cosine floor, plus ``migrate`` /
+    ``reembed-matter`` sentinel rows. That gate was removed from the reindex
+    path because it was measuring the wrong thing:
+
+    * it tested VERBATIM SPAN -> OWN CHUNK retrieval, while real users ask
+      natural-language questions ("what are official languages in Morocco");
+    * it was written as a MODEL-selection rule ("stay on bge-m3") yet fired on
+      CHUNKING changes, so a chunker fix could be vetoed by a metric that
+      cannot see what changed;
+    * its pass/fail margin was 1 chunk in 120 -- far inside sampling noise for
+      n=120 -- and it blocked a change that took indexed corpus coverage from
+      37.6% to 100%;
+    * re-running it cost a ~1.2GB baseline download plus a two-phase
+      container swap, on the critical path of an ordinary reindex.
+
+    Model selection remains a first-class, DELIBERATE operation -- see
+    ``app.cli.library.quality_gate`` / ``app.cli.library.parity`` and
+    ``quality_gate capture`` / ``score``. It is simply no longer something an
+    ordinary embed/index has to clear first.
+
+    What still guards a reindex is structural and lives where the damage
+    happens: the served-budget invariant (``served_budget.py``, enforced per
+    chunk in :func:`ensure_embed`), artifact integrity
+    (``read_verified_artifact``), and per-chunk index reconciliation with
+    verified ids in :func:`ensure_index`.
     """
-    problems: list[str] = []
-    if gate.get("pass") is not True:
-        problems.append(f"quality_gate pass={gate.get('pass')!r} (want True)")
-    if gate.get("model") != model:
-        problems.append(f"quality_gate model={gate.get('model')!r} != live {model!r}")
-    if gate.get("dim") != dim:
-        problems.append(f"quality_gate dim={gate.get('dim')!r} != live {dim!r}")
-    if gate.get("git_sha") != sha:
-        problems.append(
-            f"quality_gate git_sha={gate.get('git_sha')!r} != live HEAD {sha!r} (stale)"
-        )
-    mean_cosine = parity.get("mean_cosine")
-    if not isinstance(mean_cosine, (int, float)) or mean_cosine < MIN_PARITY_COSINE:
-        problems.append(f"parity mean_cosine={mean_cosine!r} < {MIN_PARITY_COSINE} (refusing)")
-    if parity.get("model") != model:
-        problems.append(f"parity model={parity.get('model')!r} != live {model!r}")
-    if parity.get("dim") != dim:
-        problems.append(f"parity dim={parity.get('dim')!r} != live {dim!r}")
-    if parity.get("git_sha") != sha:
-        problems.append(f"parity git_sha={parity.get('git_sha')!r} != live HEAD {sha!r} (stale)")
-    if problems:
-        raise RunRefused("; ".join(problems))
-    for kind, row in (("migrate", migrate_row), ("reembed-matter", reembed_row)):
-        problem = _sentinel_problem(kind, row, model=model, dim=dim, sha=sha)
-        if problem is not None:
-            raise RunRefused(problem)
-    assert migrate_row is not None and reembed_row is not None
-    return {
-        "model": model,
-        "dim": dim,
-        "git_sha": sha,
-        "gate_recall_granite": gate.get("recall_at_10_granite"),
-        "gate_recall_bge": gate.get("recall_at_10_bge"),
-        "parity_mean_cosine": mean_cosine,
-        "migrate_id": migrate_row.get("id"),
-        "reembed_matter_id": reembed_row.get("id"),
-    }
-
-
-def _sentinel_problem(kind: str, row: dict | None, *, model: str, dim: int, sha: str) -> str | None:
-    """One missing-step message for a sentinel row, or None when it matches."""
-    if row is None:
-        return (
-            f"no library_import_runs row kind={kind!r} "
-            f"(run `bulk migrate --confirm` then `bulk reembed-matter`; refusing)"
-        )
-    if row.get("status") != "done":
-        return f"{kind} sentinel status={row.get('status')!r} (want 'done'; refusing)"
-    mismatches = []
-    if row.get("model") != model:
-        mismatches.append(f"model={row.get('model')!r} != live {model!r}")
-    if row.get("dim") != dim:
-        mismatches.append(f"dim={row.get('dim')!r} != live {dim!r}")
-    if row.get("git_sha") != sha:
-        mismatches.append(f"git_sha={row.get('git_sha')!r} != live HEAD {sha!r} (stale)")
-    if mismatches:
-        return f"{kind} sentinel mismatch: " + "; ".join(mismatches) + " (refusing)"
-    return None
+    if not model or not model.strip():
+        raise RunRefused("embedding model is unset (refusing)")
+    if dim <= 0:
+        raise RunRefused(f"embedding dim={dim!r} is not positive (refusing)")
+    return {"model": model, "dim": dim, "pipeline_fingerprint": sha}
 
 
 def _make_embedder(embed_url: str | None, model: str):
@@ -212,14 +183,20 @@ def _make_store(qdrant_url: str | None, local_path: str | None, dim: int):
 
 
 def _served_estimate(text: str) -> int:
-    """Seam over the todo-6 killer-input guard (tests inject a stub)."""
-    from app.cli.library.quality_gate import served_estimate
+    """Seam over the killer-input guard (tests inject a stub).
+
+    Delegates to the pure domain single source of truth
+    (``app.domain.authority.served_budget``) -- the same budget the splitter
+    cuts to -- not to the CLI layer.
+    """
+    from app.domain.authority.served_budget import served_estimate
 
     return served_estimate(text)
 
 
 def _served_safe_tokens() -> int:
-    from app.cli.library.quality_gate import SERVED_SAFE_TOKENS
+    """Seam over the served-budget ceiling (tests inject a stub)."""
+    from app.domain.authority.served_budget import SERVED_SAFE_TOKENS
 
     return int(SERVED_SAFE_TOKENS)
 
@@ -249,30 +226,13 @@ def write_embed_cache(path: str | Path, vectors: dict[str, list[float]]) -> Path
     return write_artifact(recs, path)
 
 
-async def _latest_sentinel(session: Any, kind: str) -> dict | None:
-    """Newest ``library_import_runs`` row for ``kind`` as a plain dict."""
-    row = await LibraryImportRepository(session).latest_run(kind)
-    if row is None:
-        return None
-    return {
-        "id": int(row.id),
-        "kind": row.kind,
-        "model": row.model,
-        "dim": int(row.dim),
-        "git_sha": row.git_sha,
-        "status": row.status,
-    }
+async def check_preflight(session: Any, *, model: str, dim: int, sha: str) -> dict:
+    """Validate the live embedding config (no gate artifacts, no I/O).
 
-
-async def check_preflight(
-    session: Any, *, gate_path: str, parity_path: str, model: str, dim: int, sha: str
-) -> dict:
-    """Load gate artifacts + sentinel rows and run :func:`preflight`."""
-    gate = load_gate_artifact(gate_path, "quality_gate")
-    parity = load_gate_artifact(parity_path, "parity")
-    migrate_row = await _latest_sentinel(session, "migrate")
-    reembed_row = await _latest_sentinel(session, "reembed-matter")
-    return preflight(gate, parity, migrate_row, reembed_row, model=model, dim=dim, sha=sha)
+    ``session`` is accepted for call-site symmetry with the other stage
+    helpers; the checks are pure config assertions.
+    """
+    return preflight(model=model, dim=dim, sha=sha)
 
 
 async def scope_file_ids(session: Any, limit: int | None) -> list[int]:
@@ -373,6 +333,39 @@ async def ensure_extract(
     return report
 
 
+async def _probe_embedder_ready(embedder: Any) -> bool:
+    """Seam: does the embedding server answer right now?
+
+    ``embedder`` may be a test fake with no ``base_url``; those report ready
+    so the retry loop falls back to a plain pause rather than hanging.
+    """
+    base = getattr(embedder, "base_url", None)
+    if not base:
+        return True
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{base}/health")
+        return resp.status_code == 200
+    except httpx.HTTPError:
+        return False
+
+
+async def _wait_embedder_ready(embedder: Any) -> None:
+    """Block until the embedding server answers again, or the ceiling passes.
+
+    A crash-looping container is not ready in a fixed number of seconds: it
+    must re-mmap and reload the GGUF. Polling /health is what makes the retry
+    survive a restart, which a fixed short sleep cannot.
+    """
+    deadline = time.monotonic() + _ISOLATED_READY_TIMEOUT_SECONDS
+    while True:
+        if await _probe_embedder_ready(embedder):
+            return
+        if time.monotonic() >= deadline:
+            return
+        await anyio.sleep(_ISOLATED_RETRY_DELAY_SECONDS)
+
+
 async def _embed_batch_isolated(
     embedder: Any, sendable: list[Any], texts: list[str]
 ) -> tuple[list[tuple[Any, str, list[float]]], list[Any], int]:
@@ -396,9 +389,11 @@ async def _embed_batch_isolated(
     except httpx.TransportError:
         pass
     # Batch dropped the connection: retry text-by-text so one killer cannot
-    # take the whole batch (or run) down with it. A short sleep between the
-    # single attempts lets the auto-restarting server come back, separating
-    # "server was still restarting" from a genuine killer text.
+    # take the whole batch (or run) down with it. Between attempts we WAIT FOR
+    # THE SERVER TO ANSWER /health rather than sleeping a fixed short interval:
+    # a crash-looping container needs to reload its GGUF, so a 5s sleep used to
+    # land inside the restart and mark every chunk queued behind the crasher as
+    # failed. One crash became a cluster of 32.
     good: list[tuple[Any, str, list[float]]] = []
     failed: list[Any] = []
     calls = 1
@@ -411,7 +406,7 @@ async def _embed_batch_isolated(
             except httpx.TransportError:
                 calls += 1
                 if attempt < _ISOLATED_SINGLE_RETRIES:
-                    await anyio.sleep(_ISOLATED_RETRY_DELAY_SECONDS)
+                    await _wait_embedder_ready(embedder)
         if vec is None:
             failed.append(chunk)
         else:
@@ -429,10 +424,12 @@ async def ensure_embed(
 ) -> dict:
     """Embed every scoped file's pending chunks; create chunk rows from artifacts.
 
-    Killer-input pre-filter (todo 6 guard): chunks past the served-token cap
-    are marked ``failed`` with reason ``served-context-exceeded`` in the
-    report and NEVER sent. Cache-first resume: vectors already in the
-    per-file cache mark their rows embedded without a server call.
+    Served-budget guard: the splitter already cuts every chunk to the served
+    budget, so an over-budget chunk here means a STALE artifact and the run
+    fails loudly (:class:`RunFailed`, exit 2) rather than dropping the chunk
+    and indexing the remainder as a partial success. Cache-first resume:
+    vectors already in the per-file cache mark their rows embedded without a
+    server call.
     """
     from app.infrastructure.embeddings.client import estimate_eta_seconds
 
@@ -485,6 +482,7 @@ async def ensure_embed(
         by_id = {rec["chunk_id"]: rec for rec in records}
         cache_path = embed_cache_path_for(adir, row.sha256)
         cache = read_embed_cache(cache_path)
+        over_budget: list[str] = []
         for chunk in pending:
             rec = by_id.get(chunk.chunk_id)
             if rec is None:
@@ -493,6 +491,24 @@ async def ensure_embed(
                 set_chunk_status(chunk, "failed")
                 report["chunks_skipped"] += 1
                 report["skipped_ids"].append(chunk.chunk_id)
+                over_budget.append(chunk.chunk_id)
+        if over_budget:
+            # Fail LOUDLY, never quietly. The splitter now cuts to the same
+            # served budget this stage measures against, so no chunk can be
+            # born over it: this branch is unreachable for a freshly
+            # extracted artifact. Reaching it means the artifact predates the
+            # splitter fix (older extractor), and indexing the rest would be
+            # a silent partial success -- exactly how 62% of the corpus was
+            # lost before. So: name the file and the count, leave the ledger
+            # uncommitted (those chunks stay pending for the re-extract) and
+            # abort with RunFailed -> exit 2. This module never claims
+            # success on failure.
+            raise RunFailed(
+                f"embed: {len(over_budget)} chunk(s) over the served budget "
+                f"({safe_tokens}) in {row.path} -- stale artifact, re-extract "
+                f"(never index a partial success); first ids: "
+                f"{', '.join(over_budget[:3])}"
+            )
         sendable = [c for c in pending if c.status == "pending" and c.chunk_id not in cache]
         for chunk in pending:
             if chunk.chunk_id in cache and chunk.status == "pending":
@@ -551,12 +567,6 @@ async def ensure_embed(
             set_file_stage_status(row, "embed_status", "embedded")
             report["files_embedded"] += 1
         await session.commit()  # per-file commit: kill-mid-run resumes
-    if report["chunks_skipped"]:
-        print(
-            f"embed: skipped {report['chunks_skipped']} chunks "
-            f"reason={SERVED_EXCEEDED_REASON} (never sent)",
-            flush=True,
-        )
     return report
 
 
@@ -675,12 +685,11 @@ def _engine(db_url: str):
 
 async def run_embed(args: argparse.Namespace) -> dict[str, Any]:
     """Execute ``bulk embed``: preflight -> ensure-extract -> embed."""
-    from app.cli.library.bulk_migrate import live_git_sha
     from app.config import settings
 
     model = settings.EMBEDDING_MODEL
     dim = int(settings.EMBEDDING_DIM)
-    sha = live_git_sha()
+    sha = compute_pipeline_fingerprint(model=model, dim=dim)
     db_url = args.db_url or settings.DATABASE_URL
     engine = _engine(db_url)
     try:
@@ -690,8 +699,6 @@ async def run_embed(args: argparse.Namespace) -> dict[str, Any]:
         async with maker() as session:
             gate_report = await check_preflight(
                 session,
-                gate_path=args.gate,
-                parity_path=args.parity,
                 model=model,
                 dim=dim,
                 sha=sha,
@@ -738,12 +745,11 @@ async def run_embed(args: argparse.Namespace) -> dict[str, Any]:
 
 async def run_index(args: argparse.Namespace) -> dict[str, Any]:
     """Execute ``bulk index``: preflight -> ensure-extract -> ensure-embed -> index."""
-    from app.cli.library.bulk_migrate import live_git_sha
     from app.config import settings
 
     model = settings.EMBEDDING_MODEL
     dim = int(settings.EMBEDDING_DIM)
-    sha = live_git_sha()
+    sha = compute_pipeline_fingerprint(model=model, dim=dim)
     db_url = args.db_url or settings.DATABASE_URL
     engine = _engine(db_url)
     try:
@@ -753,8 +759,6 @@ async def run_index(args: argparse.Namespace) -> dict[str, Any]:
         async with maker() as session:
             gate_report = await check_preflight(
                 session,
-                gate_path=args.gate,
-                parity_path=args.parity,
                 model=model,
                 dim=dim,
                 sha=sha,
@@ -809,12 +813,11 @@ async def run_index(args: argparse.Namespace) -> dict[str, Any]:
 
 async def run_run(args: argparse.Namespace) -> dict[str, Any]:
     """Execute ``bulk run``: explicit embed-then-index wrapper over one scope."""
-    from app.cli.library.bulk_migrate import live_git_sha
     from app.config import settings
 
     model = settings.EMBEDDING_MODEL
     dim = int(settings.EMBEDDING_DIM)
-    sha = live_git_sha()
+    sha = compute_pipeline_fingerprint(model=model, dim=dim)
     db_url = args.db_url or settings.DATABASE_URL
     engine = _engine(db_url)
     try:
@@ -824,16 +827,12 @@ async def run_run(args: argparse.Namespace) -> dict[str, Any]:
         async with maker() as session:
             gate_report = await check_preflight(
                 session,
-                gate_path=args.gate,
-                parity_path=args.parity,
                 model=model,
                 dim=dim,
                 sha=sha,
             )
             print(
-                f"run: preflight ok model={model} dim={dim} "
-                f"sha={sha[:7]} migrate_id={gate_report['migrate_id']} "
-                f"reembed_id={gate_report['reembed_matter_id']}",
+                f"run: preflight ok model={model} dim={dim} sha={sha[:7]}",
                 flush=True,
             )
             scope = await scope_file_ids(session, args.limit)
@@ -863,12 +862,16 @@ async def run_run(args: argparse.Namespace) -> dict[str, Any]:
             index_report = await ensure_index(
                 session, scope, artifact_dir=args.artifact_dir, store=store
             )
-            from app.cli.library.bulk_state import export_manifest
             from sqlalchemy import select
+
+            from app.cli.library.bulk_state import export_manifest
             from app.models.library_import import LibraryImportFile
 
             stmt = select(LibraryImportFile).where(
-                (LibraryImportFile.quarantine_reason.is_(None) | ~LibraryImportFile.quarantine_reason.like("duplicate-of:%"))
+                (
+                    LibraryImportFile.quarantine_reason.is_(None)
+                    | ~LibraryImportFile.quarantine_reason.like("duplicate-of:%")
+                )
                 & (LibraryImportFile.parse_status != "failed")
             )
             winner_rows = (await session.execute(stmt)).scalars().all()
@@ -906,8 +909,6 @@ def _stage_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--qdrant-url", default=None)
     parser.add_argument("--qdrant-local-path", default=None)
     parser.add_argument("--embed-url", default=None)
-    parser.add_argument("--gate", default="quality_gate.json")
-    parser.add_argument("--parity", default="parity.json")
 
 
 def add_embed_parser(sub: Any) -> argparse.ArgumentParser:

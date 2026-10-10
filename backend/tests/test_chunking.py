@@ -1,16 +1,21 @@
 """Golden tests for the page/hierarchy-correct chunker (plan todo 11).
 
-Covers >=1 fixture per law type (ظهير/مرسوم/قرار) plus a الفصل-numbered
-item, asserting per-position hierarchy, real page numbers, token counts
-<= 512 INCLUDING special tokens measured with the REAL Granite tokenizer
-(never a chars/4 proxy), zero served-truncation, and continued_from
-linkage where every continuation keeps its article reference.
+Covers >=1 fixture per law type (ظهير/مرسوم/قرار) plus the الفصل-numbered
+item, asserting per-position hierarchy, real page numbers, the SERVED
+token budget (the cap the embed stage enforces) measured with the REAL
+Granite tokenizer (never a chars/4 proxy), zero served-truncation, and
+continued_from linkage where every continuation keeps its article reference.
 """
 
 from __future__ import annotations
 
 import pytest
 
+from app.domain.authority.served_budget import (
+    SERVED_SAFE_TOKENS,
+    fits_served_budget,
+    served_estimate,
+)
 from app.infrastructure.authority.extractor import (
     FOLDER_CODE_MAP,
     MAX_GRANITE_TOKENS,
@@ -29,9 +34,7 @@ DAHIR_PAGES = [
     ),
     (
         2,
-        "الباب الثاني: التسجيل\n"
-        "المادة 2 - واجب التصريح\n"
-        "يجب التصريح بالولادات خلال ثلاثين يوما.\n",
+        "الباب الثاني: التسجيل\nالمادة 2 - واجب التصريح\nيجب التصريح بالولادات خلال ثلاثين يوما.\n",
     ),
 ]
 
@@ -70,9 +73,7 @@ FASL_PAGES = [
 def _all_chunks():
     out = []
     out += split_statute_structure(DAHIR_PAGES, source_path="/x/المادة المدنية/doc.pdf")
-    out += split_statute_structure(
-        DECREE_PAGES, source_path="/x/المادة المدنية/doc.pdf"
-    )
+    out += split_statute_structure(DECREE_PAGES, source_path="/x/المادة المدنية/doc.pdf")
     out += split_statute_structure(
         DECISION_PAGES, source_path="/x/مادة المعاملات الالكترونية/doc.pdf"
     )
@@ -81,9 +82,7 @@ def _all_chunks():
 
 
 def test_dahir_fixture_per_position_hierarchy_and_pages():
-    chunks = split_statute_structure(
-        DAHIR_PAGES, source_path="/x/المادة المدنية/doc.pdf"
-    )
+    chunks = split_statute_structure(DAHIR_PAGES, source_path="/x/المادة المدنية/doc.pdf")
     assert len(chunks) == 2
     assert chunks[0].article_or_section == "Article 1"
     assert chunks[1].article_or_section == "Article 2"
@@ -117,9 +116,7 @@ def test_decree_and_decision_fixtures_have_law_types():
 
 
 def test_fasl_numbered_items_are_boundaries_not_chapter():
-    chunks = split_statute_structure(
-        FASL_PAGES, source_path="/x/المادة المدنية/doc.pdf"
-    )
+    chunks = split_statute_structure(FASL_PAGES, source_path="/x/المادة المدنية/doc.pdf")
     assert len(chunks) == 2
     assert chunks[0].article_or_section == "Fasl 1"
     assert chunks[1].article_or_section == "Fasl 2"
@@ -132,18 +129,29 @@ def test_token_cap_measured_with_real_granite_tokenizer():
     chunks = _all_chunks()
     assert chunks, "expected chunks from golden fixtures"
     for c in chunks:
-        n = count_granite_tokens(c.text)
-        assert n <= MAX_GRANITE_TOKENS, f"{c.article_or_section}: {n} tokens"
-        # Served length (post-tokenization incl. special tokens) == measured.
-        assert c.token_count == n
+        # token_count records the SERVED estimate -- the budget the embed stage
+        # actually enforces -- not the raw tokenizer count. The two differ by
+        # the newline weight, and it is the served number that must stay under
+        # the cap (see test_zero_served_truncation_across_all_fixtures).
+        assert c.token_count == served_estimate(c.text)
+        assert fits_served_budget(c.text), (
+            f"{c.article_or_section}: {served_estimate(c.text)} over "
+            f"{SERVED_SAFE_TOKENS} served tokens"
+        )
 
 
 def test_zero_served_truncation_across_all_fixtures():
-    # If any chunk exceeded the served window the server would truncate;
-    # the cap assertion IS the zero-truncation proof, re-checked here
-    # independently of the stored token_count field.
+    # If any chunk exceeded the served window the server would truncate or drop
+    # the connection; the budget assertion IS the zero-truncation proof. It is
+    # deliberately the SERVED budget (not the raw 512 tokenizer cap): chunks are
+    # born under the budget the embed stage enforces, so nothing is ever
+    # discarded between chunking and indexing.
     for c in _all_chunks():
-        assert count_granite_tokens(c.text) <= 512
+        assert count_granite_tokens(c.text) <= MAX_GRANITE_TOKENS
+        assert fits_served_budget(c.text), (
+            f"{c.article_or_section}: {served_estimate(c.text)} served tokens "
+            f"> {SERVED_SAFE_TOKENS}"
+        )
 
 
 def test_overlong_article_splits_with_overlap_and_linkage():
@@ -151,8 +159,7 @@ def test_overlong_article_splits_with_overlap_and_linkage():
     pages = [
         (
             1,
-            "ظهير شريف بتنفيذ القانون المتعلق بالالتزامات\nالمادة 7 - المسؤولية\n"
-            + body * 200,
+            "ظهير شريف بتنفيذ القانون المتعلق بالالتزامات\nالمادة 7 - المسؤولية\n" + body * 200,
         ),
     ]
     chunks = split_statute_structure(pages, source_path="/x/المادة المدنية/doc.pdf")
@@ -166,10 +173,40 @@ def test_overlong_article_splits_with_overlap_and_linkage():
         assert cur.continued_from == prev.article_or_section
 
 
-def test_short_articles_are_not_split():
-    chunks = split_statute_structure(
-        DAHIR_PAGES, source_path="/x/المادة المدنية/doc.pdf"
+def test_no_piece_is_contained_in_its_predecessor():
+    # An overlap prefix exists to give a continuation leading context. If it is
+    # ever emitted as a chunk in its own right, that chunk carries zero new
+    # information yet still consumes a vector, a Qdrant point and a top-10
+    # retrieval slot while competing with the piece it was copied from.
+    # Sentences must be DISTINCT: with a single sentence repeated, every piece
+    # is trivially a substring of the next and the assertion would measure the
+    # fixture instead of the splitter.
+    body = " ".join(
+        f"الطرف {i} يتمتع بالحقوق المقررة له بموجب المادة {i} من هذا القانون."
+        for i in range(1, 121)
     )
+    pages = [
+        (
+            1,
+            "ظهير شريف بتنفيذ القانون المتعلق بالالتزامات\nالمادة 7 - المسؤولية\n" + body,
+        ),
+    ]
+    chunks = split_statute_structure(pages, source_path="/x/المادة المدنية/doc.pdf")
+    assert len(chunks) > 1, "over-long article must split, never truncate"
+    offenders = [
+        cur.article_or_section
+        for prev, cur in zip(chunks, chunks[1:])
+        if min(len(cur.text.strip()), len(prev.text.strip())) > 0
+        and sorted((cur.text.strip(), prev.text.strip()), key=len)[0]
+        in sorted((cur.text.strip(), prev.text.strip()), key=len)[1]
+    ]
+    assert not offenders, (
+        f"emitted a content-free chunk that is contained in its predecessor: {offenders[:3]}"
+    )
+
+
+def test_short_articles_are_not_split():
+    chunks = split_statute_structure(DAHIR_PAGES, source_path="/x/المادة المدنية/doc.pdf")
     for c in chunks:
         assert c.continued_from is None
 

@@ -209,12 +209,13 @@ def _evidence_points(
 
 async def run_reembed(args: argparse.Namespace) -> dict[str, Any]:
     """Execute ``reembed-matter``; raise ReembedFailed on any failure."""
-    from app.cli.library.bulk_migrate import live_git_sha, write_sentinel
+    from app.cli.library.bulk_migrate import write_sentinel
+    from app.cli.library.fingerprint import compute_pipeline_fingerprint
     from app.config import settings
 
     model = settings.EMBEDDING_MODEL
     dim = int(settings.EMBEDDING_DIM)
-    sha = live_git_sha()
+    sha = compute_pipeline_fingerprint(model=model, dim=dim)
     qdrant_url = args.qdrant_url or settings.QDRANT_URL
     local_path = args.qdrant_local_path or (settings.QDRANT_LOCAL_PATH or None)
     db_url = args.db_url or settings.DATABASE_URL
@@ -237,9 +238,7 @@ async def run_reembed(args: argparse.Namespace) -> dict[str, Any]:
     n_sections = sum(len(d["sections"]) for d in docs)
 
     if not docs or n_sections == 0:
-        from app.cli.library.bulk_migrate import write_sentinel as _ws
-
-        row_id = await _ws(
+        row_id = await write_sentinel(
             db_url,
             kind="reembed-matter",
             model=model,
@@ -252,6 +251,7 @@ async def run_reembed(args: argparse.Namespace) -> dict[str, Any]:
                 "documents": len(docs),
                 "sections": n_sections,
                 "counts": {"pre": pre, "post": dict(pre)},
+                "pipeline_fingerprint": sha,
             },
         )
         print(
@@ -417,6 +417,7 @@ async def run_reembed(args: argparse.Namespace) -> dict[str, Any]:
             "model": model,
             "dim": dim,
             "git_sha": sha,
+            "pipeline_fingerprint": sha,
             "counts": {"pre": pre, "post": post, "per_document": per_document},
         },
     )

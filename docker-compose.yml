@@ -22,13 +22,27 @@ services:
   crispembed:
     build:
       context: ./crispembed
+    # Explicit -m so the served model provably matches the tokenizer that
+    # app/domain/authority/granite_tokens.py measures the budget with
+    # (ibm-granite/granite-embedding-107m-multilingual). bge-m3 measured
+    # better recall@10 (0.9750 vs 0.9167) but costs ~15h to embed the corpus
+    # on 4 cores vs ~1h, so granite is the serving embedder.
+    command:
+      - "./crispembed-server"
+      - "-m"
+      - "granite-embedding-107m-multilingual"
+      - "--port"
+      - "8080"
+      - "--host"
+      - "0.0.0.0"
+      - "--image-root"
+      - "/models"
+      - "--model-root"
+      - "/models"
     ports:
       - "8080:8080"
     volumes:
-      # Persist the granite-embedding-107m GGUF (115MB) across recreations
-      # (server cache dir). The bge-m3 GGUF stays cached in this shared volume
-      # as the quality-gate fallback; the temporary crispembed-bge gate service
-      # was removed in plan todo 19.
+      # Persist the served GGUF across recreations (server cache dir).
       # Path must match the runtime user's HOME (/home/crispembed), not /root.
       - crispembed_models:/home/crispembed/.cache/crispembed
       - crispembed_models:/models

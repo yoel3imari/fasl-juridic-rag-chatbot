@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = ""
     GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
 
-    EMBEDDING_MODEL: str = "granite-embedding-107m"
+    EMBEDDING_MODEL: str = "granite-embedding-107m-multilingual"
 
     QDRANT_URL: str = "http://localhost:6333"
     QDRANT_EVIDENCE_COLLECTION: str = "matter_evidence"

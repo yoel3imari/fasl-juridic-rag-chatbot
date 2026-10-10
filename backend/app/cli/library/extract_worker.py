@@ -77,20 +77,18 @@ def _ocr_png(png_bytes: bytes, page_no: int, timeout: int) -> str:
         with Image.open(io.BytesIO(png_bytes)) as img:
             return pytesseract.image_to_string(img, lang=_OCR_LANGS, timeout=timeout)
     except Exception as exc:
-        raise OcrUnavailableError(
-            page_no=page_no, reason=f"tesseract failed: {exc}"
-        ) from exc
+        raise OcrUnavailableError(page_no=page_no, reason=f"tesseract failed: {exc}") from exc
 
 
-def _extract_pages(
-    pdf_path: str, job: ExtractJob
-) -> tuple[list[tuple[int, str]], int, int]:
+def _extract_pages(pdf_path: str, job: ExtractJob) -> tuple[list[tuple[int, str]], int, int]:
     """PyMuPDF fast path + per-page OCR fallback. Raises on corrupt PDFs.
 
     Returns ``(pages, ocr_ok, ocr_attempted)``: attempted counts every page
     that needed OCR (engine present or not); ok counts decoded pages.
     """
     import fitz
+
+    from app.infrastructure.authority.extractor import normalize_extracted_text
 
     try:
         doc = fitz.open(pdf_path)
@@ -103,14 +101,18 @@ def _extract_pages(
         if len(doc) == 0:
             raise ValueError("corrupt: PDF has no pages")
         for i, page in enumerate(doc):
-            text = page.get_text()
+            # NFKC at the boundary, for BOTH the text layer and OCR output: the
+            # bulk worker reads PyMuPDF/Tesseract itself instead of calling
+            # extractor.extract_text, so it must normalize on its own or the
+            # bulk pipeline silently keeps unnormalized text.
+            text = normalize_extracted_text(page.get_text())
             if not needs_ocr(text, job.min_chars) or job.ocr_mode == "off":
                 pages.append((i + 1, text))
                 continue
             ocr_attempted += 1
             try:
                 png = bytes(page.get_pixmap(dpi=job.dpi).tobytes("png"))
-                text = _ocr_png(png, i + 1, job.ocr_timeout)
+                text = normalize_extracted_text(_ocr_png(png, i + 1, job.ocr_timeout))
                 ocr_ok += 1
             except Exception:
                 text = ""  # OCR-failed page: empty, counted at quarantine time
@@ -120,9 +122,7 @@ def _extract_pages(
     return pages, ocr_ok, ocr_attempted
 
 
-def split_pages_fallback(
-    pages: list[tuple[int, str]], source_path: str | None
-) -> list[Chunk]:
+def split_pages_fallback(pages: list[tuple[int, str]], source_path: str | None) -> list[Chunk]:
     """Article-blind page fallback for content the T11 segmenter can't cap.
 
     Used ONLY when :func:`split_statute_structure` raises its Granite-cap
@@ -133,8 +133,12 @@ def split_pages_fallback(
     length <= cap, continuations keep their section label.
     """
     from app.domain.authority.article_split import split_article
-    from app.domain.authority.granite_tokens import MAX_GRANITE_TOKENS, count_granite_tokens
     from app.domain.authority.law_patterns import code_for
+    from app.domain.authority.served_budget import (
+        SERVED_SAFE_TOKENS,
+        ServedBudgetExceeded,
+        served_estimate,
+    )
 
     code = code_for(source_path)
     chunks: list[Chunk] = []
@@ -169,10 +173,10 @@ def split_pages_fallback(
                 )
                 prev_label = piece_label
     for c in chunks:
-        n = count_granite_tokens(c.text)
-        if n > MAX_GRANITE_TOKENS:
-            raise RuntimeError(
-                f"fallback chunk {c.article_or_section!r} exceeds cap: {n}"
+        n = served_estimate(c.text)
+        if n > SERVED_SAFE_TOKENS:
+            raise ServedBudgetExceeded(
+                f"fallback chunk {c.article_or_section!r} exceeds the served budget: {n} tokens"
             )
         c.token_count = n
     return chunks
@@ -180,6 +184,7 @@ def split_pages_fallback(
 
 def run_job(job: ExtractJob) -> ExtractResult:
     """Extract + chunk + record-build ONE file. Pure: no DB, no JSON writes."""
+    from app.domain.authority.served_budget import ServedBudgetExceeded
     from app.infrastructure.authority.extractor import split_statute_structure
 
     if not os.path.exists(job.abs_path):
@@ -192,33 +197,29 @@ def run_job(job: ExtractJob) -> ExtractResult:
         return ExtractResult(job.rel, "quarantined", [], f"corrupt: {exc}")
     try:
         chunks = split_statute_structure(pages, source_path=job.abs_path)
-    except RuntimeError as exc:
-        # T11 cap backstop on article-blind chunks: degrade to the page-split
-        # fallback (same cap guarantee) instead of quarantining real content.
-        if "exceeds Granite cap" not in str(exc):
-            return ExtractResult(job.rel, "quarantined", [], f"chunking-failed: {exc}")
+    except ServedBudgetExceeded:
+        # Served-budget backstop on article-blind chunks: degrade to the
+        # page-split fallback (same budget guarantee) instead of quarantining
+        # real content. Caught BY TYPE: an earlier version matched the literal
+        # message "exceeds Granite cap", which silently disabled this fallback
+        # the moment the extractor reworded its exception.
         try:
             chunks = split_pages_fallback(pages, source_path=job.abs_path)
         except Exception as fallback_exc:
-            return ExtractResult(
-                job.rel, "quarantined", [], f"chunking-failed: {fallback_exc}"
-            )
+            return ExtractResult(job.rel, "quarantined", [], f"chunking-failed: {fallback_exc}")
     except Exception as exc:
         return ExtractResult(job.rel, "quarantined", [], f"chunking-failed: {exc}")
     if not chunks:
         usable = sum(1 for _, t in pages if t and t.strip())
         if usable == 0 and ocr_attempted > 0:
             reason = (
-                f"ocr-failed: 0 usable pages after {ocr_attempted} OCR pages "
-                f"({ocr_pages} decoded)"
+                f"ocr-failed: 0 usable pages after {ocr_attempted} OCR pages ({ocr_pages} decoded)"
             )
         elif usable == 0:
             reason = "empty: no extractable text on any page"
         else:
             reason = "empty: chunker emitted zero chunks"
-        return ExtractResult(
-            job.rel, "quarantined", [], reason, ocr_pages, ocr_attempted
-        )
+        return ExtractResult(job.rel, "quarantined", [], reason, ocr_pages, ocr_attempted)
     records = [
         build_record(
             chunk_id=make_chunk_id(

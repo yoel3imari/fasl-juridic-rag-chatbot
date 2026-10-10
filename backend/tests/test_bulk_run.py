@@ -16,6 +16,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -31,6 +32,7 @@ from app.cli.library.bulk_run import (
     check_preflight,
     ensure_embed,
     ensure_index,
+    preflight,
     run_embed,
     scope_file_ids,
 )
@@ -73,112 +75,31 @@ def _good_sentinel(i: int = 1) -> dict:
     }
 
 
-def _preflight_ok() -> dict:
-    return bulk_run.preflight(
-        _good_gate(),
-        _good_parity(),
-        _good_sentinel(1),
-        {**_good_sentinel(2), "kind": "reembed-matter"},
-        model=MODEL,
-        dim=DIM,
-        sha=SHA,
-    )
-
 
 # --- pure preflight ------------------------------------------------------------
+#
+# The model-quality gate (quality_gate.json pass + parity cosine + migrate /
+# reembed-matter sentinels) was REMOVED from the reindex path: it measured
+# verbatim-span self-retrieval rather than real queries, was written as a
+# model-selection rule yet fired on chunking changes, and its margin was 1
+# chunk in 120. What remains guards the embedding CONFIG, and the real
+# reindex guards are structural (served budget, artifact integrity, per-chunk
+# index reconciliation) and live in ensure_embed / ensure_index.
 
 
-def test_preflight_ok_reports_sentinel_ids() -> None:
-    out = _preflight_ok()
-    assert out["migrate_id"] == 1
-    assert out["reembed_matter_id"] == 2
-    assert out["parity_mean_cosine"] == pytest.approx(0.993)
+def test_preflight_ok_reports_model_dim_and_fingerprint() -> None:
+    out = preflight(model=MODEL, dim=DIM, sha=SHA)
+    assert out == {"model": MODEL, "dim": DIM, "pipeline_fingerprint": SHA}
 
 
-def test_preflight_stale_gate_refuses() -> None:
-    gate = _good_gate()
-    gate["git_sha"] = "deadbeef"
-    with pytest.raises(RunRefused, match="stale"):
-        bulk_run.preflight(
-            gate,
-            _good_parity(),
-            _good_sentinel(),
-            {**_good_sentinel(), "kind": "reembed-matter"},
-            model=MODEL,
-            dim=DIM,
-            sha=SHA,
-        )
+def test_preflight_rejects_unset_model() -> None:
+    with pytest.raises(RunRefused, match="model is unset"):
+        preflight(model="  ", dim=DIM, sha=SHA)
 
 
-def test_preflight_failed_gate_refuses() -> None:
-    gate = _good_gate()
-    gate["pass"] = False
-    with pytest.raises(RunRefused, match="pass=False"):
-        bulk_run.preflight(
-            gate,
-            _good_parity(),
-            _good_sentinel(),
-            _good_sentinel(),
-            model=MODEL,
-            dim=DIM,
-            sha=SHA,
-        )
-
-
-def test_preflight_low_parity_refuses() -> None:
-    parity = _good_parity()
-    parity["mean_cosine"] = 0.97
-    with pytest.raises(RunRefused, match="mean_cosine"):
-        bulk_run.preflight(
-            _good_gate(),
-            parity,
-            _good_sentinel(),
-            _good_sentinel(),
-            model=MODEL,
-            dim=DIM,
-            sha=SHA,
-        )
-
-
-def test_preflight_missing_migrate_sentinel_refuses() -> None:
-    with pytest.raises(RunRefused, match="kind='migrate'"):
-        bulk_run.preflight(
-            _good_gate(),
-            _good_parity(),
-            None,
-            _good_sentinel(),
-            model=MODEL,
-            dim=DIM,
-            sha=SHA,
-        )
-
-
-def test_preflight_missing_reembed_sentinel_refuses() -> None:
-    with pytest.raises(RunRefused, match="kind='reembed-matter'"):
-        bulk_run.preflight(
-            _good_gate(),
-            _good_parity(),
-            _good_sentinel(),
-            None,
-            model=MODEL,
-            dim=DIM,
-            sha=SHA,
-        )
-
-
-def test_preflight_stale_sentinel_refuses() -> None:
-    row = _good_sentinel()
-    row["git_sha"] = "5b65a0c"
-    with pytest.raises(RunRefused, match="stale"):
-        bulk_run.preflight(
-            _good_gate(),
-            _good_parity(),
-            row,
-            _good_sentinel(),
-            model=MODEL,
-            dim=DIM,
-            sha=SHA,
-        )
+def test_preflight_rejects_non_positive_dim() -> None:
+    with pytest.raises(RunRefused, match="not positive"):
+        preflight(model=MODEL, dim=0, sha=SHA)
 
 
 def test_missing_gate_file_refuses() -> None:
@@ -339,89 +260,9 @@ class _FakeStore:
 # --- refusal BEFORE any embed/index work ----------------------------------------
 
 
-def test_run_embed_stale_gate_refuses_before_any_embed_call(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # Given: a stale gate (sha mismatch) + an extracted file ready to embed
-    gate = _good_gate()
-    gate["git_sha"] = "stale-sha"
-    _write_gates(tmp_path, gate=gate)
-    engine = asyncio.run(_mkdb(_db_url(tmp_path)))
-    maker = async_sessionmaker(engine, expire_on_commit=False)
-
-    async def _seed() -> None:
-        async with maker() as s:
-            await _seed_file(s, tmp_path, "cat/a.pdf")
-            await _seed_sentinels(s)
-
-    asyncio.run(_seed())
-    fake = _FakeEmbedder()
-    monkeypatch.setattr(bulk_run, "_make_embedder", lambda *a, **k: fake)
-    # When: bulk embed runs (via the CLI wrapper: refusal -> SystemExit(2))
-    # Then: SystemExit(2) and the embedder was NEVER called
-    with pytest.raises(SystemExit) as ei:
-        asyncio.run(bulk_run.run_embed_from_args(_args(tmp_path)))
-    assert ei.value.code == FAIL_EXIT
-    assert fake.calls == []
-    asyncio.run(engine.dispose())
 
 
-def test_check_preflight_missing_migrate_row_refuses(tmp_path: Path) -> None:
-    engine = asyncio.run(_mkdb(_db_url(tmp_path)))
-    maker = async_sessionmaker(engine, expire_on_commit=False)
-
-    async def _go():
-        async with maker() as s:
-            s.add(
-                LibraryImportRun(
-                    kind="reembed-matter",
-                    model=MODEL,
-                    dim=DIM,
-                    git_sha=SHA,
-                    status="done",
-                    payload_json={},
-                )
-            )
-            await s.commit()
-            with pytest.raises(RunRefused, match="kind='migrate'"):
-                await check_preflight(
-                    s, gate_path="x", parity_path="y", model=MODEL, dim=DIM, sha=SHA
-                )
-
-    # gate load happens first; write good gates then delete sentinel path:
-    _write_gates(tmp_path)
-
-    async def _go2():
-        async with maker() as s:
-            s.add(
-                LibraryImportRun(
-                    kind="reembed-matter",
-                    model=MODEL,
-                    dim=DIM,
-                    git_sha=SHA,
-                    status="done",
-                    payload_json={},
-                )
-            )
-            await s.commit()
-            with pytest.raises(RunRefused, match="kind='migrate'"):
-                await check_preflight(
-                    s,
-                    gate_path=str(tmp_path / "gate.json"),
-                    parity_path=str(tmp_path / "parity.json"),
-                    model=MODEL,
-                    dim=DIM,
-                    sha=SHA,
-                )
-
-    asyncio.run(_go2())
-    asyncio.run(engine.dispose())
-
-
-# --- killer-input pre-filter -------------------------------------------------------
-
-
-def test_embed_prefilter_never_sends_overlong(
+def test_embed_refuses_loudly_on_overlong_chunk_instead_of_skipping(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Given: served_estimate flags chunk 1 as overlong
@@ -454,21 +295,32 @@ def test_embed_prefilter_never_sends_overlong(
                 s, [fid], artifact_dir=str(tmp_path / "art"), embedder=fake, dim=DIM
             )
 
-    report = asyncio.run(_go())
-    # Then: killer chunk skipped with reason, good chunk embedded, 1 call
-    assert report["chunks_skipped"] == 1
-    assert report["chunks_embedded"] == 1
-    assert len(fake.calls) == 1
-    assert all("KILLER" not in t for batch in fake.calls for t in batch)
+    # Then: the run ABORTS instead of quietly dropping the chunk. A chunk that
+    # the embed stage cannot accept means the artifact predates the served
+    # budget in the splitter and must be re-extracted -- indexing the rest
+    # would report a partial index as a success.
+    with pytest.raises(bulk_run.RunFailed) as excinfo:
+        asyncio.run(_go())
+    message = str(excinfo.value)
+    assert "cat/a.pdf" in message
+    assert "over the served budget" in message
+    # Nothing was sent to the embedder: no partial success is claimed.
+    assert fake.calls == []
 
+    # The failure path commits nothing, so the chunk rows created while reading
+    # the artifact are rolled back too: the ledger holds no partial state for
+    # this file and the re-extract re-drives it from scratch.
     async def _check() -> None:
         async with maker() as s:
-            rows = (
-                (await s.execute(sa.select(LibraryImportChunk).order_by(LibraryImportChunk.ord)))
+            chunks = (await s.execute(sa.select(LibraryImportChunk))).scalars().all()
+            assert chunks == []
+            row = (
+                (await s.execute(sa.select(LibraryImportFile).where(LibraryImportFile.id == fid)))
                 .scalars()
-                .all()
+                .one()
             )
-            assert [c.status for c in rows] == ["embedded", "failed"]
+            assert row.embed_status != "embedded"
+            assert row.index_status != "indexed"
 
     asyncio.run(_check())
     asyncio.run(engine.dispose())
@@ -731,3 +583,79 @@ def test_scope_is_deterministic_path_order(tmp_path: Path) -> None:
 
     assert asyncio.run(_names()) == ["cat/a.pdf", "cat/b.pdf"]
     asyncio.run(engine.dispose())
+
+
+# --- crash-restart resilience ------------------------------------------------
+
+
+class _FlakyEmbedder:
+    """Fails the batch and the first N single attempts, like a crash-looping server.
+
+    Simulates the real failure: a killer text drops the connection, the
+    container restarts, and every chunk queued behind it would fail if the
+    retry did not wait for the server to come back.
+    """
+
+    def __init__(self, dim: int, down_attempts: int) -> None:
+        self.dim = dim
+        self.down_attempts = down_attempts
+        self.seen: list[str] = []
+        self.batches = 0
+
+    def embed_sync(self, texts: list[str]) -> list[list[float]]:
+        self.seen.extend(texts)
+        if len(texts) > 1:
+            self.batches += 1
+            raise httpx.ReadError("connection reset by peer", request=None)
+        if self.down_attempts > 0:
+            self.down_attempts -= 1
+            raise httpx.ReadError("connection reset by peer", request=None)
+        return [[0.2] * self.dim for _ in texts]
+
+
+def test_embed_recovers_chunks_queued_behind_a_crash(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A crash must not condemn the chunks behind it: they are retried after the
+    # server reports ready again.
+    probed: list[bool] = []
+
+    async def _ready(_embedder) -> bool:
+        probed.append(True)
+        return True
+
+    monkeypatch.setattr(bulk_run, "_probe_embedder_ready", _ready)
+    fake = _FlakyEmbedder(dim=DIM, down_attempts=2)
+    chunks = [object() for _ in range(4)]
+    texts = [f"chunk-{i}" for i in range(4)]
+
+    good, failed, calls = asyncio.run(
+        bulk_run._embed_batch_isolated(fake, chunks, texts)
+    )
+
+    assert len(failed) == 0, f"chunks behind the crash were lost: {failed}"
+    assert len(good) == 4
+    assert calls == 1 + 2, "expected exactly the two transient failures"
+    assert probed, "readiness was never probed between retries"
+
+
+def test_embed_still_isolates_a_genuinely_poisonous_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # After the server is healthy again, a text that ALWAYS kills it must still
+    # be isolated -- resilience must not turn into an infinite loop.
+
+    async def _ready(_embedder) -> bool:
+        return True
+
+    monkeypatch.setattr(bulk_run, "_probe_embedder_ready", _ready)
+
+    class _AlwaysKills:
+        def embed_sync(self, texts: list[str]) -> list[list[float]]:
+            raise httpx.ReadError("reset", request=None)
+
+    good, failed, _ = asyncio.run(
+        bulk_run._embed_batch_isolated(_AlwaysKills(), [object()], ["bad"])
+    )
+    assert good == []
+    assert len(failed) == 1
