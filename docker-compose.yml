@@ -61,14 +61,17 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    # Host network so the app-stored base_url http://127.0.0.1:11434 reaches
+    # the host LLM directly: on a bridge the container's localhost would be
+    # itself, and bridge-to-host IPs are filtered by the host firewall.
+    # Infra URLs therefore use host-localhost (their ports are published).
+    network_mode: host
     command: ["sh", "-c", "uv run alembic upgrade head && exec uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"]
-    ports:
-      - "8000:8000"
     env_file:
       - .env
     environment:
-      QDRANT_URL: http://qdrant:6333
-      CRISPEMBED_URL: http://crispembed:8080
+      QDRANT_URL: http://localhost:6333
+      CRISPEMBED_URL: http://localhost:8080
     volumes:
       - ./backend/app:/app/app
       - ./backend/alembic:/app/alembic

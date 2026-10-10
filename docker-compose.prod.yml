@@ -31,7 +31,9 @@ services:
       context: ./backend
       dockerfile: Dockerfile.prod
     # No --reload in prod; migrate then serve.
-    command: !override ["sh", "-c", "uv run alembic upgrade head && exec uv run uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    command: !override ["sh", "-c", "(socat TCP-LISTEN:11434,fork,bind=127.0.0.1,reuseaddr TCP:host.docker.internal:11434 2>/dev/null &) ; uv run alembic upgrade head && exec uv run uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     # Drop dev bind mounts; keep only the data volume.
     # Own volume (not dev's backend_data): prod runs as appuser, dev as
     # root, and a shared volume leaves root-owned files that break alembic

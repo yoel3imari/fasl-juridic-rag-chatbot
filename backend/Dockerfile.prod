@@ -8,8 +8,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_LINK_MODE=copy
 
 # Tesseract + Arabic/French data so the OCR path works inside the stack.
+# socat forwards the container's 127.0.0.1:11434 to host.docker.internal:11434
+# so an app-stored base_url of http://127.0.0.1:11434 reaches the host LLM.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    socat \
     tesseract-ocr \
     tesseract-ocr-ara \
     tesseract-ocr-fra \
