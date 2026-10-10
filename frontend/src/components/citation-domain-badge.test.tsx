@@ -6,8 +6,8 @@
  * Then: the card shows exactly one domain badge (matter vs authority),
  *       the correct human reference, and never a relevance score / rank.
  */
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import type {
   AuthorityCitation,
   MatterCitation,
@@ -65,5 +65,22 @@ describe("CitationDomainBadge", () => {
     expect(text).not.toMatch(/score/i);
     expect(text).not.toMatch(/rank/i);
     expect(text).not.toMatch(/relevance/i);
+  });
+
+  it("calls onSelect with the full citation when clicked", () => {
+    const onSelect = vi.fn();
+    render(
+      <CitationDomainBadge citation={AUTHORITY_CITATION} onSelect={onSelect} />,
+    );
+
+    fireEvent.click(screen.getByRole("button"));
+
+    expect(onSelect).toHaveBeenCalledWith(AUTHORITY_CITATION);
+  });
+
+  it("stays inert when rendered without onSelect", () => {
+    render(<CitationDomainBadge citation={MATTER_CITATION} />);
+
+    expect(() => fireEvent.click(screen.getByRole("button"))).not.toThrow();
   });
 });

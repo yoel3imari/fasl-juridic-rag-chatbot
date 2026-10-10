@@ -24,12 +24,12 @@ import {
   Cpu,
   ShieldCheck,
   Sparkles,
+  Code,
   Check,
   AlertTriangle,
   AlertCircle,
   Zap,
   Layers,
-  Settings2,
   KeyRound,
   Eye,
   EyeOff,
@@ -50,13 +50,7 @@ const FALLBACK_PROVIDERS: ProviderOption[] = [
     is_external: false,
     description: "Local on-device inference with zero data transmission. Strict privacy compliant.",
     default_model: "llama3.2",
-    models: [
-      { id: "llama3.2", name: "Llama 3.2 (3B)", description: "Lightweight, fast, local privacy", recommended: true },
-      { id: "llama3.1", name: "Llama 3.1 (8B)", description: "Balanced general reasoning" },
-      { id: "qwen2.5", name: "Qwen 2.5 (7B/14B)", description: "Excellent Arabic & multilingual legal understanding", recommended: true },
-      { id: "mistral", name: "Mistral (7B)", description: "Concise legal summarization" },
-      { id: "deepseek-r1", name: "DeepSeek R1 Distill", description: "Deep step-by-step reasoning" },
-    ],
+    models: [],
   },
   {
     id: "groq",
@@ -65,10 +59,7 @@ const FALLBACK_PROVIDERS: ProviderOption[] = [
     is_external: true,
     description: "Ultra-low latency cloud inference via standard OpenAI-compatible protocol.",
     default_model: "llama-3.3-70b-versatile",
-    models: [
-      { id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B (Groq)", description: "Near-instant token generation", recommended: true },
-      { id: "mixtral-8x7b-32768", name: "Mixtral 8x7B (Groq)", description: "Fast mixture of experts" },
-    ],
+    models: [],
   },
   {
     id: "openrouter",
@@ -77,13 +68,7 @@ const FALLBACK_PROVIDERS: ProviderOption[] = [
     is_external: true,
     description: "Unified gateway to state-of-the-art models (Claude, GPT-4o, Gemini, DeepSeek).",
     default_model: "anthropic/claude-3.5-sonnet",
-    models: [
-      { id: "anthropic/claude-3.5-sonnet", name: "Claude 3.5 Sonnet", description: "Top benchmark for legal reasoning and drafting", recommended: true },
-      { id: "openai/gpt-4o", name: "GPT-4o", description: "High-capability omnimodel" },
-      { id: "google/gemini-2.0-flash", name: "Gemini 2.0 Flash", description: "Ultra fast with large context window", recommended: true },
-      { id: "meta-llama/llama-3.3-70b-instruct", name: "Llama 3.3 70B Instruct", description: "High performance open-weights" },
-      { id: "deepseek/deepseek-r1", name: "DeepSeek R1", description: "Frontier reasoning for complex statutory disputes" },
-    ],
+    models: [],
   },
   {
     id: "openai",
@@ -92,11 +77,7 @@ const FALLBACK_PROVIDERS: ProviderOption[] = [
     is_external: true,
     description: "Direct OpenAI API connection (requires OPENAI_API_KEY).",
     default_model: "gpt-4o",
-    models: [
-      { id: "gpt-4o", name: "GPT-4o", description: "Flagship intelligent model", recommended: true },
-      { id: "gpt-4o-mini", name: "GPT-4o Mini", description: "Fast, cost-efficient analysis" },
-      { id: "o1-mini", name: "o1-mini", description: "Advanced reasoning for complex statutory analysis" },
-    ],
+    models: [],
   },
   {
     id: "google",
@@ -105,10 +86,7 @@ const FALLBACK_PROVIDERS: ProviderOption[] = [
     is_external: true,
     description: "Direct Google Gemini API connection (requires GEMINI_API_KEY).",
     default_model: "gemini-2.0-flash",
-    models: [
-      { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", description: "High-speed next-gen model", recommended: true },
-      { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro", description: "Deep document analysis & massive context" },
-    ],
+    models: [],
   },
   {
     id: "anthropic",
@@ -117,10 +95,7 @@ const FALLBACK_PROVIDERS: ProviderOption[] = [
     is_external: true,
     description: "Direct Anthropic Claude API connection (requires ANTHROPIC_API_KEY).",
     default_model: "claude-3-5-sonnet-latest",
-    models: [
-      { id: "claude-3-5-sonnet-latest", name: "Claude 3.5 Sonnet", description: "State-of-the-art legal precision", recommended: true },
-      { id: "claude-3-5-haiku-latest", name: "Claude 3.5 Haiku", description: "Fast and concise responses" },
-    ],
+    models: [],
   },
 ];
 
@@ -140,9 +115,7 @@ export function ModelSwitcherModal({
   const { t } = useI18n();
   const [providers, setProviders] = React.useState<ProviderOption[]>(FALLBACK_PROVIDERS);
   const [selectedProviderId, setSelectedProviderId] = React.useState(currentProvider);
-  const [selectedModelId, setSelectedModelId] = React.useState(currentModel);
-  const [customModelInput, setCustomModelInput] = React.useState("");
-  const [isCustom, setIsCustom] = React.useState(false);
+  const [modelInput, setModelInput] = React.useState(currentModel);
   const [keysStatus, setKeysStatus] = React.useState<Record<string, boolean>>({});
   const [maskedKeys, setMaskedKeys] = React.useState<Record<string, string | null>>({});
   const [baseUrls, setBaseUrls] = React.useState<Record<string, string | null>>({});
@@ -159,9 +132,7 @@ export function ModelSwitcherModal({
   React.useEffect(() => {
     if (open) {
       setSelectedProviderId(currentProvider);
-      setSelectedModelId(currentModel);
-      setIsCustom(false);
-      setCustomModelInput("");
+      setModelInput(currentModel);
       setKeyInputs({});
       setBaseUrlInputs({});
       setTouchedKeys({});
@@ -200,25 +171,18 @@ export function ModelSwitcherModal({
   const activeProvider =
     providers.find((p) => p.id === selectedProviderId) ?? providers[0];
 
+  const savedModelFor = (providerId: string) =>
+    providerId === currentProvider ? currentModel : "";
+
   const handleProviderSelect = (providerId: string) => {
     setSelectedProviderId(providerId);
     setShowKey(false);
     setTestResult(null);
-    const p = providers.find((item) => item.id === providerId);
-    if (p) {
-      setSelectedModelId(p.default_model);
-      setIsCustom(false);
-    }
-  };
-
-  const handleModelSelect = (modelId: string) => {
-    setSelectedModelId(modelId);
-    setIsCustom(false);
-    setTestResult(null);
+    setModelInput(savedModelFor(providerId));
   };
 
   const handleTestConnection = async () => {
-    const finalModel = isCustom ? customModelInput.trim() : selectedModelId;
+    const finalModel = modelInput.trim();
     if (!finalModel || testing) return;
 
     setTesting(true);
@@ -246,7 +210,7 @@ export function ModelSwitcherModal({
   };
 
   const handleApply = () => {
-    const finalModel = isCustom ? customModelInput.trim() : selectedModelId;
+    const finalModel = modelInput.trim();
     if (!finalModel || saving) return;
 
     if (!settingsAvailable) {
@@ -484,99 +448,26 @@ export function ModelSwitcherModal({
               <span>{t.modelSwitcher.modelSectionTitle}</span>
             </h4>
 
-            <div className="space-y-1.5">
-              {activeProvider.models.map((m) => {
-                const isSelected = !isCustom && m.id === selectedModelId;
-
-                return (
-                  <div
-                    key={m.id}
-                    onClick={() => handleModelSelect(m.id)}
-                    className={cn(
-                      "flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer shadow-2xs",
-                      isSelected
-                        ? "border-primary bg-primary/5 ring-1 ring-primary/30"
-                        : "border-border/70 bg-background/50 hover:bg-muted/40",
-                    )}
-                  >
-                    <div className="min-w-0 flex-1 me-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-semibold text-foreground">
-                          {m.name}
-                        </span>
-                        <code className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.2 rounded">
-                          {m.id}
-                        </code>
-                        {m.recommended && (
-                          <Badge
-                            variant="secondary"
-                            className="text-[9px] px-1.5 py-0 bg-primary/15 text-primary border-primary/20 font-medium"
-                          >
-                            {t.modelSwitcher.recommendedBadge}
-                          </Badge>
-                        )}
-                      </div>
-                      {m.description && (
-                        <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
-                          {m.description}
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="shrink-0">
-                      {isSelected ? (
-                        <div className="flex h-4.5 w-4.5 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-2xs">
-                          <Check className="h-2.5 w-2.5 stroke-[3]" />
-                        </div>
-                      ) : (
-                        <div className="h-3.5 w-3.5 rounded-full border border-border/70" />
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-
-              {/* Custom Model Option */}
-              <div
-                onClick={() => setIsCustom(true)}
-                className={cn(
-                  "p-2.5 rounded-xl border transition-all cursor-pointer shadow-2xs space-y-1.5",
-                  isCustom
-                    ? "border-primary bg-primary/5 ring-1 ring-primary/30"
-                    : "border-dashed border-border/70 bg-background/30 hover:bg-muted/30",
-                )}
+            <div className="space-y-1">
+              <label
+                htmlFor="model-id"
+                className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5"
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Settings2 className="h-3.5 w-3.5 text-primary" />
-                    <span className="text-xs font-semibold text-foreground">
-                      {t.modelSwitcher.customModelOption}
-                    </span>
-                  </div>
-                  {isCustom ? (
-                    <div className="flex h-4.5 w-4.5 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-2xs">
-                      <Check className="h-2.5 w-2.5 stroke-[3]" />
-                    </div>
-                  ) : (
-                    <div className="h-3.5 w-3.5 rounded-full border border-border/70" />
-                  )}
-                </div>
-
-                {isCustom && (
-                  <div className="pt-0.5 space-y-1">
-                    <Input
-                      autoFocus
-                      value={customModelInput}
-                      onChange={(e) => {
-                        setCustomModelInput(e.target.value);
-                        setTestResult(null);
-                      }}
-                      placeholder={t.modelSwitcher.customModelPlaceholder}
-                      className="text-xs h-8.5 bg-background font-mono"
-                    />
-                  </div>
-                )}
-              </div>
+                <Code className="h-3 w-3 text-muted-foreground shrink-0" />
+                <span>{t.modelSwitcher.modelIdLabel}</span>
+              </label>
+              <Input
+                id="model-id"
+                value={modelInput}
+                onChange={(e) => {
+                  setModelInput(e.target.value);
+                  setTestResult(null);
+                }}
+                placeholder={t.modelSwitcher.customModelPlaceholder}
+                autoComplete="off"
+                spellCheck={false}
+                className="text-xs h-8.5 bg-background font-mono"
+              />
             </div>
           </div>
         </div>
@@ -616,7 +507,7 @@ export function ModelSwitcherModal({
             variant="secondary"
             size="sm"
             onClick={handleTestConnection}
-            disabled={testing || (isCustom && !customModelInput.trim())}
+            disabled={testing || !modelInput.trim()}
             className="text-xs h-8.5 rounded-lg gap-1.5 w-full sm:w-auto"
           >
             {testing ? (
@@ -640,8 +531,8 @@ export function ModelSwitcherModal({
             <Button
               type="button"
               size="sm"
-              onClick={handleApply}
-              disabled={(isCustom && !customModelInput.trim()) || saving}
+onClick={handleApply}
+            disabled={!modelInput.trim() || saving}
               className="text-xs h-8.5 rounded-lg gap-1.5 font-medium shadow-2xs"
             >
               {saving ? (

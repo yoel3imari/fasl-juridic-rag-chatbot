@@ -12,6 +12,7 @@ import {
   type SseEvent,
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import { detectDirection, type DirectionResult } from "@/lib/direction";
 import { MarkdownRenderer } from "./markdown-renderer";
 import { ModelSwitcherModal } from "./model-switcher-modal";
 import { Button } from "@/components/ui/button";
@@ -41,6 +42,20 @@ interface Message {
   notFound?: boolean;
   outOfScope?: boolean;
   error?: string;
+}
+
+/**
+ * Direction for an assistant message, derived from its own accumulated text.
+ * While the answer is still empty (drafting placeholder) the preceding user
+ * message is the only available signal; with nothing to go on we stay LTR.
+ */
+function assistantDirection(
+  messages: readonly Message[],
+  index: number,
+): DirectionResult {
+  const text = messages[index].text;
+  if (text) return detectDirection(text);
+  return detectDirection(messages[index - 1]?.text ?? "");
 }
 
 const PROVIDER_STORAGE_KEY = "fasl_llm_provider";
@@ -337,6 +352,10 @@ export function Chat({
     [input, busy, matterId, conversationId, t, provider, model, onConversationChange, onChunksRetrieved],
   );
 
+  const directions = messages.map((m, i) =>
+    m.role === "user" ? detectDirection(m.text) : assistantDirection(messages, i),
+  );
+
   return (
     <section
       aria-label="chat"
@@ -467,13 +486,17 @@ export function Chat({
           >
             {m.role === "user" ? (
               /* User message: clean modern bubble aligned to end */
-              <div className="max-w-[85%] rounded-2xl rounded-tr-xs bg-primary/10 text-foreground dark:bg-primary/20 dark:text-foreground px-4 py-2.5 text-sm leading-relaxed border border-primary/15 shadow-2xs">
+              <div
+                dir={directions[i].dir}
+                lang={directions[i].lang}
+                className="max-w-[85%] rounded-2xl rounded-tr-xs bg-primary/10 text-foreground dark:bg-primary/20 dark:text-foreground px-4 py-2.5 text-sm leading-relaxed border border-primary/15 shadow-2xs"
+              >
                 <div className="whitespace-pre-wrap">{m.text}</div>
               </div>
             ) : (
               /* Assistant message: seamless integration, same background as chat canvas */
               <div className="w-full space-y-2 text-foreground">
-                <div className="text-sm leading-relaxed">
+                <div dir={directions[i].dir} lang={directions[i].lang} className="text-sm leading-relaxed">
                   {m.text ? (
                     <MarkdownRenderer content={m.text} />
                   ) : busy && i === messages.length - 1 && !m.error ? (

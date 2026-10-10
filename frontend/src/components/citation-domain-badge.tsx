@@ -9,7 +9,7 @@ interface Props {
   citation: Citation;
   /** Anchor id for click-to-source scroll targets. */
   anchorId?: string;
-  onSelect?: (anchorId: string) => void;
+  onSelect?: (citation: Citation) => void;
   className?: string;
 }
 
@@ -31,7 +31,7 @@ export function CitationDomainBadge({
       <button
         type="button"
         data-claim-source={anchorId}
-        onClick={() => anchorId && onSelect?.(anchorId)}
+        onClick={() => onSelect?.(citation)}
         className={cn(
           "group my-0.5 inline-flex cursor-pointer flex-col items-start gap-1 rounded-lg border border-sky-400/30 bg-sky-500/10 hover:bg-sky-500/15 px-2.5 py-1.5 text-start text-xs transition-all shadow-xs dark:border-sky-500/20 dark:bg-sky-500/10 dark:hover:bg-sky-500/20",
           className,
@@ -57,7 +57,7 @@ export function CitationDomainBadge({
     <button
       type="button"
       data-claim-source={anchorId}
-      onClick={() => anchorId && onSelect?.(anchorId)}
+      onClick={() => onSelect?.(citation)}
       className={cn(
         "group my-0.5 inline-flex cursor-pointer flex-col items-start gap-1 rounded-lg border border-amber-400/30 bg-amber-500/10 hover:bg-amber-500/15 px-2.5 py-1.5 text-start text-xs transition-all shadow-xs dark:border-amber-500/20 dark:bg-amber-500/10 dark:hover:bg-amber-500/20",
         className,

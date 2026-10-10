@@ -2,7 +2,7 @@
 
 import type { Citation, SpanRef } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
-import { BookOpen, FileText, Scale, Copy, Check, ShieldCheck } from "lucide-react";
+import { BookOpen, FileText, Scale, Copy, Check, ShieldCheck, Quote } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -41,6 +41,13 @@ export function SourceInspector({
 
   if (activeCitation) {
     const isMatter = activeCitation.domain === "matter";
+
+    // The backend sends `excerpt` on citations; the shared `Citation` type does not
+    // declare it yet, so parse the field here instead of casting the citation.
+    const rawExcerpt: unknown =
+      "excerpt" in activeCitation ? activeCitation.excerpt : undefined;
+    const excerpt =
+      typeof rawExcerpt === "string" && rawExcerpt.trim() !== "" ? rawExcerpt : null;
 
     return (
       <div className="rounded-2xl border border-border/70 bg-card p-4 space-y-3.5 shadow-2xs animate-in fade-in duration-200">
@@ -119,6 +126,27 @@ export function SourceInspector({
               </div>
               <div className="font-mono text-xs">{activeCitation.faithful_ref}</div>
             </div>
+
+            <div className="rounded-xl border border-sky-500/20 bg-sky-500/5 p-3">
+              <div className="text-[10px] font-bold text-sky-700 dark:text-sky-300 uppercase mb-1 flex items-center gap-1">
+                <Quote className="h-3 w-3" /> {t.sourceInspector.excerptLabel}
+              </div>
+              {excerpt === null ? (
+                <>
+                  <div className="font-mono text-xs">{activeCitation.faithful_ref}</div>
+                  <div className="text-muted-foreground text-[11px] mt-1">
+                    {t.sourceInspector.noTextAvailable}
+                  </div>
+                </>
+              ) : (
+                <p
+                  dir="auto"
+                  className="text-xs text-foreground leading-relaxed whitespace-pre-wrap break-words"
+                >
+                  {excerpt}
+                </p>
+              )}
+            </div>
           </div>
         ) : (
           <div className="space-y-2.5">
@@ -147,6 +175,30 @@ export function SourceInspector({
               <div className="text-muted-foreground text-[11px]">
                 {t.sourceInspector.versionLabel.replace("{version}", activeCitation.version)} · {t.sourceInspector.editionLabel.replace("{edition}", activeCitation.edition)}
               </div>
+            </div>
+
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3">
+              <div className="text-[10px] font-bold text-amber-700 dark:text-amber-300 uppercase mb-1 flex items-center gap-1">
+                <Quote className="h-3 w-3" /> {t.sourceInspector.excerptLabel}
+              </div>
+              {excerpt === null ? (
+                <>
+                  <div className="font-semibold text-foreground text-xs">
+                    {activeCitation.article_or_section}
+                  </div>
+                  <div className="text-muted-foreground text-[11px] mt-1">
+                    {t.sourceInspector.noTextAvailable}
+                  </div>
+                </>
+              ) : (
+                <p
+                  dir="auto"
+                  lang={activeCitation.language}
+                  className="text-xs text-foreground leading-relaxed whitespace-pre-wrap break-words"
+                >
+                  {excerpt}
+                </p>
+              )}
             </div>
           </div>
         )}

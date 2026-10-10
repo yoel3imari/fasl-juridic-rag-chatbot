@@ -171,6 +171,7 @@ export const translations = {
       versionLabel: "الإصدار: {version}",
       editionLabel: "الطبعة: {edition}",
       pubDateLabel: "تاريخ النشر: {date}",
+      excerptLabel: "نص الفقرة المستشهَد بها",
       noTextAvailable: "لا يوجد نص معاينة متاح.",
     },
     retrievedChunks: {
@@ -327,6 +328,7 @@ export const translations = {
       modalDesc: "اختر المزود والنموذج المستخدم في المحادثة والتحليل القانوني وصياغة المذكرات.",
       providerSectionTitle: "1. مزود الخدمة (LLM Provider)",
       modelSectionTitle: "2. النموذج المعتمد (Model)",
+      modelIdLabel: "معرّف النموذج (Model ID)",
       localProviderBadge: "محلي وخاص 100% (On-Device)",
       cloudProviderBadge: "خدمة سحابية (Cloud API)",
       strictPrivacyNote: "الوضع الصارم للخصوصية: النماذج المحلية (Ollama) تحافظ على سرية بيانات الملف كاملة داخل جهازك دون إرسالها لأي خادم خارجي.",
@@ -500,6 +502,7 @@ export const translations = {
       versionLabel: "Version : {version}",
       editionLabel: "Édition : {edition}",
       pubDateLabel: "Publication : {date}",
+      excerptLabel: "Extrait du texte cité",
       noTextAvailable: "Aucun extrait disponible.",
     },
     retrievedChunks: {
@@ -656,6 +659,7 @@ export const translations = {
       modalDesc: "Choisissez le modèle utilisé pour la consultation juridique, l'analyse de dossiers et la rédaction d'actes.",
       providerSectionTitle: "1. Fournisseur (LLM Provider)",
       modelSectionTitle: "2. Modèle (Model)",
+      modelIdLabel: "Identifiant du modèle (Model ID)",
       localProviderBadge: "Local & 100% Privé (On-Device)",
       cloudProviderBadge: "Fournisseur Cloud API",
       strictPrivacyNote: "Confidentialité stricte : les modèles locaux (Ollama) traitent toutes les pièces du dossier directement sur votre machine sans transfert externe.",
@@ -829,6 +833,7 @@ export const translations = {
       versionLabel: "Version: {version}",
       editionLabel: "Edition: {edition}",
       pubDateLabel: "Published: {date}",
+      excerptLabel: "Cited Passage",
       noTextAvailable: "No preview snippet available.",
     },
     retrievedChunks: {
@@ -985,6 +990,7 @@ export const translations = {
       modalDesc: "Configure the language model used for legal reasoning, document analysis, and contract drafting.",
       providerSectionTitle: "1. AI Provider",
       modelSectionTitle: "2. Language Model",
+      modelIdLabel: "Model ID",
       localProviderBadge: "Local & 100% Private (On-Device)",
       cloudProviderBadge: "Cloud API Provider",
       strictPrivacyNote: "Strict Privacy Guarantee: Local models (Ollama) keep 100% of case evidence on-device without outbound network transmission.",
