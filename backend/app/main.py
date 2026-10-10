@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -10,6 +12,35 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
+
+
+class HealthCheckFilter(logging.Filter):
+    """Drop uvicorn access-log records for the /health endpoint."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        # uvicorn access log args: (client_addr, method, path, http_version, status_code)
+        args = record.args
+        if isinstance(args, tuple) and len(args) >= 3:
+            return args[2] != "/health"
+        return "/health" not in record.getMessage()
+
+
+logging.getLogger("uvicorn.access").addFilter(HealthCheckFilter())
+
+# uvicorn's dictConfig owns only the `uvicorn.*` loggers and installs NO root
+# handler, so application loggers (e.g. `app.api.v1.chat`) would fall through to
+# logging's WARNING-only lastResort and every INFO line would be dropped. Attach
+# one stdout handler so the per-stage chat trace lands on the same stdout as the
+# uvicorn access log, and let the `app` tree through at INFO while third-party
+# chatter stays at the default WARNING. Skipped when the host already installed a
+# root handler (e.g. under pytest), so it never doubles output.
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=logging.WARNING,
+        format="%(levelname)s:     %(message)s",
+        stream=sys.stdout,
+    )
+logging.getLogger("app").setLevel(logging.INFO)
 
 
 @asynccontextmanager

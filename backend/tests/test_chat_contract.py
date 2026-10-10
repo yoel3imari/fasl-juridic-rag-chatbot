@@ -50,10 +50,10 @@ ERROR = "error"
 EXPECTED_FAILED_NO_ROUNDS: list[str] = [STATUS, CITATIONS, ERROR]
 EXPECTED_FAILED_AFTER_ROUNDS: list[str] = [STATUS, STATUS, CITATIONS, ERROR]
 EXPECTED_DIRECT_AGENT: list[str] = [STATUS, CITATIONS, TOKEN, TOKEN, DONE]
-EXPECTED_EMPTY: list[str] = [STATUS, STATUS, CITATIONS, TOKEN, TOKEN, DONE]
-EXPECTED_FULL: list[str] = [STATUS, STATUS, STATUS, CITATIONS, TOKEN, TOKEN, DONE]
-# Intent-gate refusal: statuses=_frames("classifying") + citations + the
-# refusal split into two token frames by _halved_tokens() + done.
+EXPECTED_EMPTY: list[str] = [STATUS, STATUS, STATUS, CITATIONS, TOKEN, TOKEN, DONE]
+EXPECTED_FULL: list[str] = [STATUS, STATUS, STATUS, STATUS, CITATIONS, TOKEN, TOKEN, DONE]
+# Intent-gate refusal: one `classifying` status + citations + the
+# refusal split into two token frames by _batched_tokens() + done.
 EXPECTED_OUT_OF_SCOPE: list[str] = [STATUS, CITATIONS, TOKEN, TOKEN, DONE]
 
 
@@ -300,11 +300,11 @@ def test_failed_path_after_tool_rounds_frame_sequence(
 ) -> None:
     """A tool round ran (returning nothing) then the provider died.
 
-    `if tool_rounds:` at chat.py:434 is what adds the second status frame, so
-    the count of status frames here is a distinct contractual value. The
-    retrieval must come back empty: `_gen_failed` is only reached when
-    `not matter_raw and not auth_raw` (chat.py:424), so a tool round that found
-    citations would fall through to the grounded path instead.
+    The second status frame is the `retrieving` stage, emitted by the envelope
+    loop before its first tool call, so the count of status frames here is a
+    distinct contractual value. The retrieval must come back empty: this path
+    is only reached when `not matter_raw and not auth_raw`, so a tool round
+    that found citations would fall through to the grounded path instead.
     """
     agent = _ScriptedAgent(
         script=[[_envelope()], []],
@@ -317,7 +317,7 @@ def test_failed_path_after_tool_rounds_frame_sequence(
     assert _types(events) == EXPECTED_FAILED_AFTER_ROUNDS
     assert [s["stage"] for s in events if s["type"] == STATUS] == [
         "classifying",
-        "searching",
+        "retrieving",
     ]
     assert DONE not in _types(events)
 
@@ -354,7 +354,7 @@ def test_direct_agent_done_payload_keys(
 def test_empty_retrieval_frame_sequence(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A tool round that returns zero hits: 2 status, citations, 2 tokens, done."""
+    """A tool round that returns zero hits: 3 status, citations, 2 tokens, done."""
     agent = _ScriptedAgent(script=[[_envelope()], ["ignored"]])
     _wire(monkeypatch, _FakeStore([], []), agent)
     resp = _post(client, content="conge annuel")
@@ -363,7 +363,8 @@ def test_empty_retrieval_frame_sequence(
     assert _types(events) == EXPECTED_EMPTY
     assert [s["stage"] for s in events if s["type"] == STATUS] == [
         "classifying",
-        "searching",
+        "retrieving",
+        "assembling",
     ]
 
 
@@ -385,10 +386,10 @@ def test_empty_retrieval_done_payload_not_found_true(
 
 
 # --------------------------------------------------------------------------- #
-# path 5 — _gen: the full grounded path (3 status frames, one of them thinking)
+# path 5 — _gen: the full grounded path (4 status frames, one per stage)
 # --------------------------------------------------------------------------- #
 def test_full_grounded_frame_sequence(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The supported path: 3 status frames (classifying, searching, thinking)."""
+    """The supported path: 4 status frames (classifying, retrieving, assembling, drafting)."""
     agent = _ScriptedAgent(script=[[_envelope()], ["FACT: synthetic. ", "RULE: synthetic."]])
     _wire(monkeypatch, _FakeStore([_matter_hit()], [_authority_hit()]), agent)
     resp = _post(client, content="conge annuel")
@@ -397,8 +398,9 @@ def test_full_grounded_frame_sequence(client: TestClient, monkeypatch: pytest.Mo
     assert _types(events) == EXPECTED_FULL
     assert [s["stage"] for s in events if s["type"] == STATUS] == [
         "classifying",
-        "searching",
-        "thinking",
+        "retrieving",
+        "assembling",
+        "drafting",
     ]
 
 
@@ -432,7 +434,7 @@ def test_full_grounded_midstream_error_stops_without_done(
     resp = _post(client, content="conge annuel")
     assert resp.status_code == 200, resp.text
     events = _events(resp)
-    assert _types(events) == [STATUS, STATUS, STATUS, CITATIONS, ERROR]
+    assert _types(events) == [STATUS, STATUS, STATUS, STATUS, CITATIONS, ERROR]
     err = events[-1]
     assert err["code"] == "provider_unreachable"
     assert isinstance(err["conversation_id"], int)
@@ -590,6 +592,10 @@ def test_assemble_prompt_is_byte_pinned() -> None:
     matter, authority = _prompt_hits()
     expected = (
         "You are a Moroccan legal research assistant. Structure every answer as:\n"
+        "Respond in the SAME language as the user's question — an English question "
+        "gets an English answer, an Arabic question an Arabic answer, a French "
+        "question a French answer. Keep the FACT/RULE/APPLICATION/CONCLUSION "
+        "headings in that same language.\n"
         "FACT, then RULE, then APPLICATION, then CONCLUSION.\n\n"
         f"Guardrails (mandatory): {EXPECTED_GUARDRAILS}\n\n"
         "Question: conge annuel\n\n"
@@ -641,6 +647,7 @@ def test_citation_key_sets_are_byte_pinned() -> None:
             "page",
             "span",
             "faithful_ref",
+            "excerpt",
         }
     )
     assert AUTHORITY_CITATION_KEYS == frozenset(
@@ -653,6 +660,7 @@ def test_citation_key_sets_are_byte_pinned() -> None:
             "doc_date",
             "language",
             "article_or_section",
+            "excerpt",
         }
     )
 
@@ -668,3 +676,30 @@ def test_citation_objects_are_single_domain() -> None:
         other = "authority" if cite["domain"] == "matter" else "matter"
         assert not any(f"{other}_" in k or k == other for k in cite), cite
     assert cites[0]["span"] == [3, 9]
+
+
+def test_citation_excerpt_is_capped_per_domain() -> None:
+    """An over-long passage is cut at the cap in both domains."""
+    from app.domain.citations import EXCERPT_MAX_CHARS, build_citations
+
+    matter, authority = _prompt_hits()
+    matter[0]["text"] = "m" * (EXCERPT_MAX_CHARS + 100)
+    authority[0]["text"] = "a" * (EXCERPT_MAX_CHARS + 100)
+
+    cites = build_citations(matter, authority)
+
+    assert cites[0]["excerpt"] == "m" * EXCERPT_MAX_CHARS
+    assert cites[1]["excerpt"] == "a" * EXCERPT_MAX_CHARS
+
+
+def test_citation_excerpt_is_empty_when_hit_has_no_text() -> None:
+    """A hit without passage text yields an empty excerpt, never a missing key."""
+    from app.domain.citations import build_citations
+
+    matter, authority = _prompt_hits()
+    del matter[0]["text"]
+    del authority[0]["text"]
+
+    cites = build_citations(matter, authority)
+
+    assert [c["excerpt"] for c in cites] == ["", ""]

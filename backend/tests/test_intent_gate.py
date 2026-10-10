@@ -26,10 +26,12 @@ from fastapi.testclient import TestClient
 from app.domain.intent import (
     IN_SCOPE,
     OUT_OF_SCOPE,
+    greeting_lang,
+    is_greeting,
     is_out_of_scope,
     parse_intent_label,
 )
-from app.domain.prompts import OUT_OF_SCOPE_REPLY
+from app.domain.prompts import OUT_OF_SCOPE_REPLY, greeting_reply
 from app.domain.search.schemas import AUTHORITY_COLLECTION, EVIDENCE_COLLECTION
 from app.services import chat as react_tools
 from app.services import search as svc_mod
@@ -291,7 +293,9 @@ def test_round_one_prose_classified_out_of_scope_is_refused(
 def test_greeting_prose_with_in_scope_classification_answers_directly(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Greeting carve-out: IN_SCOPE verdict keeps the direct answer intact."""
+    """Greeting carve-out: the deterministic bypass keeps the direct answer."""
+    from app.domain.prompts import greeting_reply
+
     store = _FakeStore(matter_hits=[], authority_hits=[])
     embedder = _FakeEmbedder()
     agent = _FakeAgent(script=[["Hello! I am FASL, your legal assistant."], ["IN_SCOPE"]])
@@ -305,7 +309,46 @@ def test_greeting_prose_with_in_scope_classification_answers_directly(
     assert "out_of_scope" not in done, "in-scope answers must not carry the refusal key"
     assert done["not_found"] is False
     tokens = "".join(e.get("text", "") for e in events if e["type"] == "token")
-    assert "fasl" in tokens.lower()
-    assert len(agent.calls) == 2, "decision round + enforcement classification"
+    assert tokens == greeting_reply("en")
+    assert agent.calls == [], "greeting bypass must not consult the LLM"
     assert embedder.calls == []
     assert store.seen_matter_ids == []
+
+
+# --------------------------------------------------------------------------- #
+# is_greeting — deterministic bypass for bare greetings/smalltalk
+# --------------------------------------------------------------------------- #
+def test_is_greeting_matches_canonical_forms() -> None:
+    assert is_greeting("hello")
+    assert is_greeting("Hello!")
+    assert is_greeting("  BONJOUR  ")
+    assert is_greeting("salam")
+    assert is_greeting("سلام!")
+    assert is_greeting("Ça va ?")
+    assert is_greeting("who are you")
+    assert is_greeting("merci")
+
+
+def test_is_greeting_rejects_content_carrying_messages() -> None:
+    assert is_greeting("") is False
+    assert is_greeting("   ") is False
+    assert is_greeting("x") is False
+    assert is_greeting("hello, I need help with my divorce") is False
+    assert is_greeting("how to cook pasta") is False
+    assert is_greeting("annual leave") is False
+    assert is_greeting("hello " * 20) is False
+
+
+def test_greeting_reply_localized_and_mentions_fasl() -> None:
+    for lang in ("en", "fr", "ar"):
+        assert "FASL" in greeting_reply(lang)
+    assert greeting_reply("xx") == greeting_reply("en")
+
+
+def test_greeting_lang_routes_french_and_arabic() -> None:
+    assert greeting_lang("bonjour") == "fr"
+    assert greeting_lang("merci") == "fr"
+    assert greeting_lang("سلام") == "ar"
+    assert greeting_lang("hello") == "en"
+    assert greeting_lang("salam") is None
+    assert greeting_lang("how to cook pasta") is None

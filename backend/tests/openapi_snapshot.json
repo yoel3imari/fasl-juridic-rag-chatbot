@@ -1492,6 +1492,30 @@
         ]
       }
     },
+    "/api/v1/chat/metrics": {
+      "get": {
+        "description": "In-process chat-pipeline metrics snapshot (counters + timers).\n\nCounters cover tool-round distribution (``chat.tool_round_dist.N``), intent\nverdicts, privacy-gate triggers, generation volume and in-stream error rates\nby code; timers cover retrieval and drafting latency. The registry is\nprocess-local, so behind several workers each worker reports its own slice.\nRead-only and never records request/matter/legal text.",
+        "operationId": "chat_metrics_snapshot_api_v1_chat_metrics_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Chat Metrics Snapshot Api V1 Chat Metrics Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Chat Metrics Snapshot",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
     "/api/v1/chat/models": {
       "get": {
         "operationId": "list_models_api_v1_chat_models_get",

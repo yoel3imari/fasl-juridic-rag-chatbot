@@ -10,9 +10,22 @@ from __future__ import annotations
 
 from typing import Any
 
+# Citation excerpts are display-only (source inspector), never prompt input:
+# the cap bounds the SSE frame so one long passage cannot bloat the event.
+EXCERPT_MAX_CHARS: int = 800
+
 # Exact key sets: a citation object carries ONE domain's fields, never mixed.
 MATTER_CITATION_KEYS: frozenset[str] = frozenset(
-    {"domain", "document_id", "version_no", "doc_type", "page", "span", "faithful_ref"}
+    {
+        "domain",
+        "document_id",
+        "version_no",
+        "doc_type",
+        "page",
+        "span",
+        "faithful_ref",
+        "excerpt",
+    }
 )
 AUTHORITY_CITATION_KEYS: frozenset[str] = frozenset(
     {
@@ -24,8 +37,13 @@ AUTHORITY_CITATION_KEYS: frozenset[str] = frozenset(
         "doc_date",
         "language",
         "article_or_section",
+        "excerpt",
     }
 )
+
+
+def _excerpt(item: dict[str, Any]) -> str:
+    return item.get("text", "")[:EXCERPT_MAX_CHARS]
 
 
 def matter_citation(item: dict[str, Any]) -> dict[str, Any]:
@@ -38,6 +56,7 @@ def matter_citation(item: dict[str, Any]) -> dict[str, Any]:
         "page": item["page"],
         "span": list(item["span"]),
         "faithful_ref": item["faithful_ref"],
+        "excerpt": _excerpt(item),
     }
 
 
@@ -52,6 +71,7 @@ def authority_citation(item: dict[str, Any]) -> dict[str, Any]:
         "doc_date": item.get("doc_date"),
         "language": item.get("language", ""),
         "article_or_section": item["article_or_section"],
+        "excerpt": _excerpt(item),
     }
 
 

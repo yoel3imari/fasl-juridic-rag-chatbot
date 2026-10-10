@@ -12,6 +12,9 @@ pydantic, pydantic_ai or httpx). The refusal literal itself lives in
 
 from __future__ import annotations
 
+import re
+import string
+
 OUT_OF_SCOPE_TOOL: str = "out_of_scope"
 IN_SCOPE: str = "IN_SCOPE"
 OUT_OF_SCOPE: str = "OUT_OF_SCOPE"
@@ -74,3 +77,98 @@ def parse_intent_label(text: str) -> str:
 def is_out_of_scope(text: str) -> bool:
     """True only when the classifier unambiguously said OUT_OF_SCOPE."""
     return parse_intent_label(text) == OUT_OF_SCOPE
+
+
+# Canonical greetings / smalltalk that bypass the LLM intent gate entirely:
+# a 1B local model cannot follow the carve-out reliably, and these carry no
+# legal content to retrieve for. Full-message match only (after
+# normalization), so "hello, I have a question about ..." never matches.
+_GREETINGS_BY_LANG: dict[str, frozenset[str]] = {
+    "en": frozenset(
+        {
+            "hello",
+            "hi",
+            "hey",
+            "hello there",
+            "thanks",
+            "thank you",
+            "who are you",
+            "what are you",
+            "good morning",
+            "good afternoon",
+            "good evening",
+        }
+    ),
+    "fr": frozenset(
+        {
+            "bonjour",
+            "salut",
+            "merci",
+            "bonsoir",
+            "qui etes vous",
+            "qui êtes vous",
+        }
+    ),
+    "ar": frozenset(
+        {
+            "سلام",
+            "مرحبا",
+            "مرحباً",
+            "شكرا",
+            "شكراً",
+            "السلام عليكم",
+            "سلام عليكم",
+            "من انت",
+            "من أنت",
+        }
+    ),
+    # Latin-script Darija / Maghreb smalltalk; mostly French-leaning usage,
+    # so the reply language falls back to the detect_lang heuristic.
+    "darija": frozenset(
+        {
+            "salam",
+            "azul",
+            "labas",
+            "la bas",
+            "cava",
+            "ca va",
+            "ça va",
+        }
+    ),
+}
+
+_GREETINGS: frozenset[str] = frozenset().union(*_GREETINGS_BY_LANG.values())
+
+_NORMALIZE_RE: re.Pattern[str] = re.compile(f"[{re.escape(string.punctuation)}،؟؛«»‹›…—–]+")
+
+
+def _normalize_greeting(text: str) -> str:
+    raw = (text or "").casefold()
+    raw = _NORMALIZE_RE.sub(" ", raw)
+    return " ".join(raw.split())
+
+
+def is_greeting(text: str) -> bool:
+    """True for a bare greeting/smalltalk message — deterministic, no LLM.
+
+    Normalizes (casefold, punctuation stripped, whitespace collapsed) then
+    requires a full match against _GREETINGS plus a 40-char ceiling, so
+    longer messages with real content always fall through to the LLM gate.
+    """
+    normalized = _normalize_greeting(text)
+    if not normalized or len(normalized) > 40:
+        return False
+    return normalized in _GREETINGS
+
+
+def greeting_lang(text: str) -> str | None:
+    """Reply language for a greeting, or None when it carries no signal.
+
+    French/Arabic-script greetings map directly; Latin-script Darija and
+    English fall back to the detect_lang heuristic at the call site.
+    """
+    normalized = _normalize_greeting(text)
+    for lang in ("fr", "ar", "en"):
+        if normalized in _GREETINGS_BY_LANG[lang]:
+            return lang
+    return None

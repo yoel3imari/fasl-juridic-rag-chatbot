@@ -28,8 +28,10 @@ same capabilities for direct agent use.
 from __future__ import annotations
 
 import json
+import logging
 import re
-from collections.abc import Callable
+import time
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -37,13 +39,78 @@ from app.domain.intent import (
     INTENT_RULE,
     OUT_OF_SCOPE_TOOL,
     build_classify_prompt,
+    greeting_lang,
+    is_greeting,
     is_out_of_scope,
 )
+from app.domain.language import detect_lang
+from app.domain.prompts import greeting_reply
 from app.infrastructure.llm import agent as agent_mod
 from app.infrastructure.llm.errors import ProviderUnreachableError
+from app.infrastructure.observability.metrics import metrics
 from app.services import search as svc
 
+logger = logging.getLogger(__name__)
+
 MAX_TOOL_ROUNDS: int = 3
+
+# Context-window guard for the ReAct decision round. The prior-round summary is
+# the only part of the decision prompt that can grow across rounds (the user
+# query is fixed), so it is capped before every round. The value is in CHARS,
+# not tokens: exact tokenization needs a model-specific tokenizer the chat
+# service must not depend on, so `estimate_tokens` below uses the cheap
+# chars-per-token heuristic instead. Callers may override per request through
+# `Settings.REACT_PRIOR_SUMMARY_MAX_CHARS`; this constant is the fallback for
+# direct (non-HTTP) callers such as tests.
+DEFAULT_PRIOR_SUMMARY_MAX_CHARS: int = 1200
+_CHARS_PER_TOKEN: int = 4
+
+
+def estimate_tokens(text: str | None) -> int:
+    """Cheap context-size estimate (~chars/4) — no tokenizer dependency.
+
+    Deliberately approximate: the ReAct loop only needs a monotone proxy to
+    decide when the decision prompt is growing toward the context window, not
+    an exact count. The classic 4-chars-per-token ratio is a reasonable middle
+    ground for the mixed French/Arabic/English prose this app streams.
+    """
+    return len(text or "") // _CHARS_PER_TOKEN
+
+
+def cap_prior_summary(
+    summary: str | None, max_chars: int = DEFAULT_PRIOR_SUMMARY_MAX_CHARS
+) -> str | None:
+    """Bound a prior-round summary to ``max_chars``, preserving the counts line.
+
+    ``summarize_hits`` emits one short counts line followed by an
+    ``Excerpts:`` block; when the whole summary overflows the budget the
+    counts line is always kept and the excerpt block is cut, with an ellipsis
+    marker so the model knows the context was truncated (rather than silently
+    answering from a partial excerpt).
+    """
+    if not summary or max_chars <= 0 or len(summary) <= max_chars:
+        return summary
+    first_line, sep, rest = summary.partition("\n")
+    ellipsis = " …"
+    budget = max_chars - len(first_line) - len(sep) - len(ellipsis)
+    if budget <= 0:
+        return first_line[:max_chars]
+    return f"{first_line}{sep}{rest[:budget].rstrip()}{ellipsis}"
+
+
+# Log clamps. A query may carry matter evidence, so logs get a bounded preview
+# instead of the full text; a preview is enough to explain any decision round.
+_QUERY_PREVIEW_MAX: int = 80
+_ERROR_PREVIEW_MAX: int = 300
+
+
+def _preview(text: str | None, limit: int = _QUERY_PREVIEW_MAX) -> str:
+    """First ``limit`` chars plus an ellipsis when clipped."""
+    value = text if isinstance(text, str) else str(text or "")
+    if len(value) <= limit:
+        return value
+    return value[:limit] + "..."
+
 
 SEARCH_MATTER: str = "search_matter"
 SEARCH_AUTHORITY: str = "search_authority"
@@ -67,6 +134,8 @@ TOOL_GUIDANCE: str = (
     "- search_both: default for legal questions (both domains may help).\n"
     "If the message is a greeting or smalltalk, or needs no legal context, "
     "answer directly in 1-2 sentences mentioning FASL. "
+    "Answer in the same language as the user's message (mirror their language: "
+    "Arabic→Arabic, French→French, English→English). "
     "Never invent articles, sections, document ids, or citations. " + INTENT_RULE
 )
 
@@ -101,13 +170,37 @@ def build_decision_prompt(
     return base
 
 
+def _is_valid_tool_call(data: Any) -> dict[str, str] | None:
+    """Validate one parsed candidate into a normalized tool-call envelope.
+
+    Returns ``{"tool": ..., "query": ...}`` when ``data`` is a dict carrying a
+    known tool name and a non-empty string query, else None. Extracted so the
+    direct-JSON path and the regex-extraction path in :func:`parse_tool_call`
+    share exactly one rule set — a new valid tool is honoured in both places
+    automatically.
+    """
+    if not isinstance(data, dict):
+        return None
+    tool = data.get("tool")
+    query = data.get("query")
+    if isinstance(tool, str) and tool in VALID_TOOLS and isinstance(query, str) and query.strip():
+        return {"tool": tool, "query": query.strip()}
+    return None
+
+
 def parse_tool_call(text: str) -> dict[str, str] | None:
     """Parse a JSON tool-call envelope from LLM output.
 
-    Returns ``{"tool": ..., "query": ...}`` on success, else None meaning
-    the LLM answered directly.
+    Two passes, in order: (1) the whole trimmed output as a direct JSON
+    envelope — the common case for a compliant model; (2) the first
+    ``{... "tool" ...}`` block found anywhere in the text, for models that wrap
+    the envelope in prose or a JSON array. Malformed JSON in either pass is
+    skipped, never fatal: a None return means "the LLM answered directly", so a
+    broken envelope must never crash the ReAct loop.
     """
     stripped = (text or "").strip()
+    if not stripped:
+        return None
     candidates: list[str] = [stripped]
     candidates.extend(m.group(0) for m in _ENVELOPE_RE.finditer(stripped))
     for candidate in candidates:
@@ -115,17 +208,9 @@ def parse_tool_call(text: str) -> dict[str, str] | None:
             data = json.loads(candidate)
         except (json.JSONDecodeError, ValueError):
             continue
-        if not isinstance(data, dict):
-            continue
-        tool = data.get("tool")
-        query = data.get("query")
-        if (
-            isinstance(tool, str)
-            and tool in VALID_TOOLS
-            and isinstance(query, str)
-            and query.strip()
-        ):
-            return {"tool": tool, "query": query.strip()}
+        parsed = _is_valid_tool_call(data)
+        if parsed is not None:
+            return parsed
     return None
 
 
@@ -189,22 +274,16 @@ async def execute_tool_call(
         )
         return [], list(res["authority"])
     if tool == SEARCH_BOTH:
-        matter_hits: list[dict[str, Any]] = []
-        if ctx.matter_id is not None:
-            # Matter isolation: no scope → authority search ONLY, never a
-            # cross-matter evidence query.
-            matter_res = await svc.search_matter(
-                store=ctx.store,
-                embedder=ctx.embedder,
-                matter_id=ctx.matter_id,
-                query=query,
-                top_k=ctx.top_k,
-            )
-            matter_hits = list(matter_res["matter"])
-        auth_res = await svc.search_authority(
-            store=ctx.store, embedder=ctx.embedder, query=query, top_k=ctx.top_k
-        )
-        return matter_hits, list(auth_res["authority"])
+        # Compose the two single-domain tools instead of duplicating their
+        # store calls here. SEARCH_MATTER keeps the matter-isolation guard
+        # (matter_id None → ([], []) with ZERO store calls), SEARCH_AUTHORITY
+        # runs unscoped; a new domain rule added to either branch is inherited
+        # automatically. Both halves are cached per domain in the svc layer, so
+        # this issues the same two embed+store calls as before, in the same
+        # order (matter first).
+        matter_hits, _ = await execute_tool_call(ctx, SEARCH_MATTER, query)
+        _, auth_hits = await execute_tool_call(ctx, SEARCH_AUTHORITY, query)
+        return matter_hits, auth_hits
     raise ValueError(f"unknown retrieval tool: {tool}")
 
 
@@ -215,6 +294,26 @@ async def collect_text(agent: Any, prompt: str) -> str:
         async for chunk in result.stream_text(delta=True):
             parts.append(chunk)
     return "".join(parts)
+
+
+# User-visible pipeline stages, in emission order. The SSE route shares this
+# vocabulary so progressive status frames stay consistent across the loop's
+# in-generator stages (retrieving) and the route's own (classifying,
+# assembling, drafting).
+STAGE_MESSAGES: dict[str, str] = {
+    "classifying": "Classifying...",
+    "retrieving": "Retrieving...",
+    "assembling": "Assembling...",
+    "drafting": "Drafting...",
+}
+
+
+@dataclass
+class StageEvent:
+    """One progressive pipeline stage, forwarded live to the SSE stream."""
+
+    stage: str
+    message: str
 
 
 @dataclass
@@ -236,14 +335,26 @@ async def run_envelope_loop(
     ctx: ToolContext,
     provider: str,
     privacy_check: Callable[..., None],
-) -> EnvelopeOutcome:
-    """Drive the bounded ReAct tool loop (max 3 tool rounds).
+    prior_summary_max_chars: int = DEFAULT_PRIOR_SUMMARY_MAX_CHARS,
+) -> AsyncIterator[StageEvent | EnvelopeOutcome]:
+    """Drive the bounded ReAct tool loop (max 3 tool rounds) as a stage stream.
 
-    The LLM either answers directly (no envelope → zero retrieval) or
-    emits a JSON tool-call envelope per round. Decision rounds are
-    collected silently; provider failures degrade into ``provider_error``
-    instead of raising. ``privacy_check`` runs before every decision
-    round (privacy first, always).
+    Yields :class:`StageEvent`s as the work they announce begins — a single
+    ``retrieving`` event before the first tool call (deduped across rounds) —
+    and finishes with the :class:`EnvelopeOutcome` carrying everything the
+    route needs. The LLM either answers directly (no envelope → zero
+    retrieval) or emits a JSON tool-call envelope per round. Decision rounds
+    are collected silently; provider failures degrade into
+    ``provider_error`` instead of raising. ``privacy_check`` runs before
+    every decision round (privacy first, always) and may raise its domain
+    errors (``PrivacyViolationError`` / ``ConsentRequiredError``), as may
+    tool calls via the svc store/embedding errors — those propagate to the
+    route, which converts them to in-stream SSE error frames.
+
+    ``prior_summary_max_chars`` bounds the per-round prior-tool-results block
+    (see :func:`cap_prior_summary`); the route passes
+    ``Settings.REACT_PRIOR_SUMMARY_MAX_CHARS`` so deployments can tune the
+    decision-prompt context budget.
 
     The intent gate is enforced twice, because a small model can bypass a
     prose instruction: (1) an ``out_of_scope`` envelope is honoured on
@@ -256,21 +367,60 @@ async def run_envelope_loop(
     tool_rounds = 0
     provider_error: str | None = None
     prior_summary: str | None = None
+    prior_summary_truncated = False
     out_of_scope = False
     has_matter = ctx.matter_id is not None
-    for _ in range(MAX_TOOL_ROUNDS):
+    logger.info(
+        "envelope loop: start provider=%r has_matter=%s max_rounds=%d query=%r",
+        _preview(provider),
+        has_matter,
+        MAX_TOOL_ROUNDS,
+        _preview(query),
+    )
+    if is_greeting(query):
+        logger.info("envelope loop: greeting bypass, no tool rounds")
+        metrics.incr("chat.greeting.bypass")
+        yield EnvelopeOutcome(
+            matter_raw=[],
+            auth_raw=[],
+            direct_text=greeting_reply(greeting_lang(query) or detect_lang(query)),
+            tool_rounds=0,
+            provider_error=None,
+            out_of_scope=False,
+        )
+        return
+    for round_no in range(1, MAX_TOOL_ROUNDS + 1):
         decision_prompt = build_decision_prompt(
             query, prior_summary=prior_summary, has_matter=has_matter
         )
         privacy_check(decision_prompt, has_matter_evidence=bool(matter_raw))
+        logger.info(
+            "envelope loop: round %d/%d decision attempt (prior_summary=%s)",
+            round_no,
+            MAX_TOOL_ROUNDS,
+            prior_summary is not None,
+        )
         try:
             text = await collect_text(agent, decision_prompt)
         except Exception as exc:  # provider down mid-loop: degrade, never crash
+            logger.warning(
+                "envelope loop: round %d provider error %s: %s",
+                round_no,
+                type(exc).__name__,
+                _preview(str(exc), _ERROR_PREVIEW_MAX),
+            )
             provider_error = str(ProviderUnreachableError(provider=provider, reason=str(exc)))
             break
         call = parse_tool_call(text)
+        logger.info(
+            "envelope loop: round %d collected %d chars, parsed=%s",
+            round_no,
+            len(text),
+            call["tool"] if call is not None else "direct/out_of_scope",
+        )
         if call is None:
             if prior_summary is not None:
+                logger.info("envelope loop: round %d direct answer after retrieval", round_no)
                 direct_text = text
                 break
             # Enforcement round: round 1 returned prose, so the model would
@@ -282,12 +432,27 @@ async def run_envelope_loop(
             try:
                 verdict = await collect_text(agent, classify_prompt)
             except Exception as exc:
+                logger.warning(
+                    "envelope loop: round %d classify-call provider error %s: %s",
+                    round_no,
+                    type(exc).__name__,
+                    _preview(str(exc), _ERROR_PREVIEW_MAX),
+                )
                 provider_error = str(ProviderUnreachableError(provider=provider, reason=str(exc)))
                 break
+            logger.info(
+                "envelope loop: round %d classify verdict collected %d chars",
+                round_no,
+                len(verdict),
+            )
             if is_out_of_scope(verdict):
+                logger.info("envelope loop: round %d verdict=out_of_scope", round_no)
+                metrics.incr("chat.intent.out_of_scope")
                 out_of_scope = True
                 direct_text = None
                 break
+            logger.info("envelope loop: round %d verdict=in_scope, direct answer", round_no)
+            metrics.incr("chat.intent.in_scope")
             direct_text = text
             break
         if call["tool"] == OUT_OF_SCOPE_TOOL:
@@ -295,15 +460,65 @@ async def run_envelope_loop(
             # late to be acted on. Never executed — it is not a retrieval
             # tool, and no store call may follow it.
             if prior_summary is None:
+                logger.info("envelope loop: round %d envelope verdict=out_of_scope", round_no)
+                metrics.incr("chat.intent.out_of_scope")
                 out_of_scope = True
                 direct_text = None
             break
+        if tool_rounds == 0:
+            # Announce retrieval once, before the first tool call; later
+            # rounds are covered by the same status frame.
+            yield StageEvent(stage="retrieving", message=STAGE_MESSAGES["retrieving"])
+        logger.info(
+            "envelope loop: round %d executing tool=%r query=%r",
+            round_no,
+            call["tool"],
+            _preview(call["query"]),
+        )
+        retrieval_start = time.monotonic()
         m_new, a_new = await execute_tool_call(ctx, call["tool"], call["query"])
+        metrics.timing("chat.retrieval.seconds", time.monotonic() - retrieval_start)
+        metrics.incr("chat.retrieval.rounds")
         tool_rounds += 1
         matter_raw.extend(m_new)
         auth_raw.extend(a_new)
-        prior_summary = summarize_hits(matter_raw, auth_raw)
-    return EnvelopeOutcome(
+        logger.info(
+            "envelope loop: round %d tool=%r hits matter=%d authority=%d "
+            "(total matter=%d authority=%d)",
+            round_no,
+            call["tool"],
+            len(m_new),
+            len(a_new),
+            len(matter_raw),
+            len(auth_raw),
+        )
+        raw_summary = summarize_hits(matter_raw, auth_raw)
+        prior_summary = cap_prior_summary(raw_summary, prior_summary_max_chars)
+        if prior_summary != raw_summary:
+            prior_summary_truncated = True
+            logger.info(
+                "envelope loop: round %d prior summary capped %d→%d chars (budget=%d, ~%d tokens)",
+                round_no,
+                len(raw_summary),
+                len(prior_summary or ""),
+                prior_summary_max_chars,
+                estimate_tokens(prior_summary),
+            )
+    logger.info(
+        "envelope loop: done tool_rounds=%d has_direct_text=%s has_provider_error=%s "
+        "out_of_scope=%s matter_hits=%d authority_hits=%d prior_summary_truncated=%s",
+        tool_rounds,
+        direct_text is not None,
+        provider_error is not None,
+        out_of_scope,
+        len(matter_raw),
+        len(auth_raw),
+        prior_summary_truncated,
+    )
+    # Tool-round distribution (0 direct/no-retrieval … MAX_TOOL_ROUNDS capped):
+    # a flat counter per bucket is enough to compute the histogram over time.
+    metrics.incr(f"chat.tool_round_dist.{tool_rounds}")
+    yield EnvelopeOutcome(
         matter_raw=matter_raw,
         auth_raw=auth_raw,
         direct_text=direct_text,

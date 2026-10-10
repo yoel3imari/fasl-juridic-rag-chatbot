@@ -7,8 +7,9 @@ Given: POST /api/v1/chat embeds the query, retrieves matter (top_k=30,
 When: the endpoint runs against fake-wire embedder/store seams.
 Then: citations carry mandatory domain labels, citations precede tokens,
       empty context yields provisional not-found (never hallucination),
-      store failure is 500, embedding failure is 503, and Message rows
-      persist citations_json matching the emitted event.
+      store/embedding/privacy failures arrive as in-stream error frames on
+      an HTTP 200 (no assistant row persisted), and Message rows persist
+      citations_json matching the emitted event.
 
 All fixtures below are SYNTHETIC test data — never real legal text.
 """
@@ -238,6 +239,30 @@ def _events(resp: Any) -> list[dict[str, Any]]:
     return out
 
 
+def _assert_no_assistant_row(db_session_factory) -> None:
+    """A mid-pipeline failure persists no assistant row (the turn has no answer)."""
+
+    async def _read() -> None:
+        async with db_session_factory() as sess:
+            msgs = (await sess.execute(select(Message).order_by(Message.id))).scalars().all()
+            assert [m.role for m in msgs] == ["user"]
+
+    import anyio
+
+    anyio.run(_read)
+
+
+def _assert_instream_error(resp: Any, code: str) -> dict[str, Any]:
+    """HTTP 200 with an in-stream error frame as the final event (no done)."""
+    assert resp.status_code == 200, resp.text
+    events = _events(resp)
+    assert [e["type"] for e in events][-1] == "error"
+    err = events[-1]
+    assert err["code"] == code
+    assert "done" not in [e["type"] for e in events]
+    return err
+
+
 def test_claims_carry_domain_labels(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, db_session_factory
 ) -> None:
@@ -263,6 +288,7 @@ def test_claims_carry_domain_labels(
         "page",
         "span",
         "faithful_ref",
+        "excerpt",
     }
     authority_keys = {
         "domain",
@@ -273,6 +299,7 @@ def test_claims_carry_domain_labels(
         "doc_date",
         "language",
         "article_or_section",
+        "excerpt",
     }
     for cite in cites:
         assert cite["domain"] in ("matter", "authority")
@@ -337,17 +364,23 @@ def test_empty_context_never_hallucinates(
         assert invented not in body, f"hallucinated content: {invented}"
 
 
-def test_qdrant_error_returns_500(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Store failure → 500 with a message (plan acceptance)."""
+def test_qdrant_error_emits_instream_search_unreachable(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, db_session_factory
+) -> None:
+    """Store failure → HTTP 200 with an in-stream `search_unreachable` frame."""
     store = _FakeStore(exc=RuntimeError("qdrant boom"))
     _wire(monkeypatch, store, _FakeEmbedder(), _retrieval_agent())
     resp = client.post("/api/v1/chat", json={"matter_id": MATTER_ID, "content": "conge annuel"})
-    assert resp.status_code == 500
-    assert "qdrant boom" in resp.text.lower() or "store" in resp.text.lower()
+    err = _assert_instream_error(resp, "search_unreachable")
+    assert "qdrant boom" in err["detail"].lower() or "store" in err["detail"].lower()
+    assert isinstance(err["conversation_id"], int)
+    _assert_no_assistant_row(db_session_factory)
 
 
-def test_embedding_failure_returns_503(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    """CrispEmbed failure → 503."""
+def test_embedding_failure_emits_instream_embedding_unreachable(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, db_session_factory
+) -> None:
+    """CrispEmbed failure → HTTP 200 with an in-stream `embedding_unreachable` frame."""
     _wire(
         monkeypatch,
         _FakeStore(),
@@ -355,7 +388,9 @@ def test_embedding_failure_returns_503(client: TestClient, monkeypatch: pytest.M
         _retrieval_agent(),
     )
     resp = client.post("/api/v1/chat", json={"matter_id": MATTER_ID, "content": "conge annuel"})
-    assert resp.status_code == 503
+    err = _assert_instream_error(resp, "embedding_unreachable")
+    assert "crispembed down" in err["detail"].lower()
+    _assert_no_assistant_row(db_session_factory)
 
 
 def test_messages_persisted_with_matching_citations(
@@ -389,26 +424,31 @@ def test_messages_persisted_with_matching_citations(
 
 
 def test_strict_privacy_blocks_external_with_matter_evidence(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, db_session_factory
 ) -> None:
-    """Strict mode + external provider + matter hits → 403 before grounded call.
+    """Strict mode + external provider + matter hits → in-stream privacy_violation.
 
     The decision round carries no matter evidence yet, so it may run; the
     guard fires once tool results exist, before any provider call that
-    would carry matter evidence.
+    would carry matter evidence. The failure arrives as an in-stream error
+    frame on HTTP 200 (no assistant row persisted).
     """
     monkeypatch.setenv("LLM_PROVIDER", "openai")
     agent = _retrieval_agent()
     _wire(monkeypatch, _FakeStore(), _FakeEmbedder(), agent)
     resp = client.post("/api/v1/chat", json={"matter_id": MATTER_ID, "content": "conge annuel"})
-    assert resp.status_code == 403
+    err = _assert_instream_error(resp, "privacy_violation")
+    assert isinstance(err["conversation_id"], int)
     assert all(
         "[matter evidence]" not in c and "[legal authorities]" not in c for c in agent.calls
     ), "matter evidence must never reach an external provider"
+    _assert_no_assistant_row(db_session_factory)
 
 
 def test_greeting_bypasses_retrieval(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Greeting is an LLM direct answer: zero embed/store calls, done found."""
+    """Greeting is a deterministic bypass: zero LLM calls, greeting tokens."""
+    from app.domain.prompts import greeting_reply
+
     store = _FakeStore(matter_hits=[], authority_hits=[])
     embedder = _FakeEmbedder()
     agent = _FakeAgent(chunks=["Hello and welcome! I am your FASL legal assistant today."])
@@ -418,26 +458,26 @@ def test_greeting_bypasses_retrieval(client: TestClient, monkeypatch: pytest.Mon
     events = _events(resp)
     assert embedder.calls == []
     assert store.seen_matter_ids == []
-    # A round-1 greeting is answered in prose, so it is never classified as an
-    # `out_of_scope` envelope — a second, constrained classification call runs
-    # to enforce the intent gate before that prose may become the answer.
-    assert len(agent.calls) == 2, "decision round + enforcement classification"
+    # Deterministic greeting bypass: the LLM is never consulted, so a weak
+    # local model cannot misroute "salam" into the out-of-scope refusal.
+    assert agent.calls == []
     cites = next(e for e in events if e["type"] == "citations")
     assert cites["citations"] == []
     done = next(e for e in events if e["type"] == "done")
     assert done.get("not_found") is False
-    body = " ".join(e.get("text", "") for e in events if e["type"] == "token")
-    assert "fasl" in body.lower()
+    assert "out_of_scope" not in done
+    body = "".join(e.get("text", "") for e in events if e["type"] == "token")
+    assert body == greeting_reply("en")
 
 
 def test_status_events_emitted(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Retrieval path emits classifying + searching status events."""
+    """Retrieval path emits classifying + retrieving + assembling + drafting."""
     _wire(monkeypatch, _FakeStore(), _FakeEmbedder(), _retrieval_agent())
     resp = client.post("/api/v1/chat", json={"matter_id": MATTER_ID, "content": "conge annuel"})
     assert resp.status_code == 200, resp.text
     events = _events(resp)
     stages = {e["stage"] for e in events if e["type"] == "status"}
-    assert {"classifying", "searching"} <= stages
+    assert {"classifying", "retrieving", "assembling", "drafting"} <= stages
     for e in events:
         if e["type"] == "status":
             assert set(e) == {"type", "stage", "message"}
