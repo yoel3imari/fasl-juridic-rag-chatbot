@@ -63,10 +63,17 @@ async def _run_migrate(args: argparse.Namespace) -> dict[str, Any]:
     return await run_migrate_from_args(args)
 
 
+async def _run_invalidate(args: argparse.Namespace) -> dict[str, Any]:
+    from app.cli.library.bulk_invalidate import run_invalidate_from_args
+
+    return await run_invalidate_from_args(args)
+
+
 def _register(sub: Any) -> dict[str, Handler]:
     """Register one subparser per stage module. Later todos add lines here."""
     from app.cli.library.bulk_catalog import add_catalog_parser
     from app.cli.library.bulk_extract import add_extract_parser
+    from app.cli.library.bulk_invalidate import add_invalidate_parser
     from app.cli.library.bulk_migrate import add_migrate_parser
     from app.cli.library.bulk_reembed import add_reembed_parser
     from app.cli.library.bulk_run import add_embed_parser, add_index_parser, add_run_parser
@@ -76,6 +83,8 @@ def _register(sub: Any) -> dict[str, Handler]:
     handlers["catalog"] = _run_catalog
     add_extract_parser(sub)
     handlers["extract"] = _run_extract
+    add_invalidate_parser(sub)
+    handlers["invalidate"] = _run_invalidate
     add_migrate_parser(sub)
     handlers["migrate"] = _run_migrate
     add_reembed_parser(sub)
@@ -105,9 +114,7 @@ def main(argv: list[str] | None = None) -> int:
     print(
         f"{args.command}: "
         + " ".join(
-            f"{k}={report[k]}"
-            for k in ("discovered", "duplicates", "catalogued")
-            if k in report
+            f"{k}={report[k]}" for k in ("discovered", "duplicates", "catalogued") if k in report
         )
     )
     print(json.dumps(report, ensure_ascii=False, sort_keys=True))
