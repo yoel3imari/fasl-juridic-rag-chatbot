@@ -27,6 +27,7 @@ export default function Home() {
   const [activeRightTab, setActiveRightTab] = useState<string>("documents");
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [newMatterModalOpen, setNewMatterModalOpen] = useState(false);
+  const [mattersVersion, setMattersVersion] = useState(0);
   const [activeCitation, setActiveCitation] = useState<Citation | null>(null);
   const [activeSpan, setActiveSpan] = useState<SpanRef | null>(null);
   const [retrievedChunks, setRetrievedChunks] = useState<Citation[]>([]);
@@ -58,6 +59,8 @@ export default function Home() {
   const handleMatterCreated = (created: Matter) => {
     setMatterId(created.id);
     setConversationId(null);
+    // Re-fetch the matter bar's list so the new matter appears in the dropdown.
+    setMattersVersion((v) => v + 1);
   };
 
   const handleMatterDeleted = (_deletedId: number) => {
@@ -80,6 +83,7 @@ export default function Home() {
         onOpenNewMatterModal={() => setNewMatterModalOpen(true)}
         onOpenCommandPalette={() => setCommandPaletteOpen(true)}
         onMatterDeleted={handleMatterDeleted}
+        refreshToken={mattersVersion}
       />
 
       {/* Main 2-Sided Split Workspace */}

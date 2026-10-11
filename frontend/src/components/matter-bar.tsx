@@ -54,12 +54,15 @@ export function MatterBar({
   onOpenNewMatterModal,
   onOpenCommandPalette,
   onMatterDeleted,
+  refreshToken = 0,
 }: {
   matterId: number | null;
   onSelect: (id: number | null) => void;
   onOpenNewMatterModal: () => void;
   onOpenCommandPalette: () => void;
   onMatterDeleted: (matterId: number) => void;
+  /** Bump to re-fetch the matter list (e.g. after a matter is created). */
+  refreshToken?: number;
 }) {
   const [matters, setMatters] = useState<Matter[]>([]);
   const [editOpen, setEditOpen] = useState(false);
@@ -80,7 +83,7 @@ export function MatterBar({
 
   useEffect(() => {
     void refresh();
-  }, []);
+  }, [refreshToken]);
 
   const activeMatter = matters.find((m) => m.id === matterId) ?? null;
 
