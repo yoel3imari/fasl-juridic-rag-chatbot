@@ -13,6 +13,7 @@
  */
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { useEffect } from "react";
 import type {
   AuthorityCitation,
   Citation,
@@ -102,7 +103,10 @@ const AUTHORITY_ALT_REF =
 let captured: Copy | null = null;
 
 function CopyProbe() {
-  captured = useI18n().t.retrievedChunks;
+  const { t } = useI18n();
+  useEffect(() => {
+    captured = t.retrievedChunks;
+  }, [t]);
   return null;
 }
 

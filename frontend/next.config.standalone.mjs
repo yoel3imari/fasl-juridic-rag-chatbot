@@ -8,7 +8,9 @@
 // `npm run build`, which is why the import below points at the base name.
 import baseConfig from './next.config.base.js';
 
-export default {
+const nextConfig = {
   ...baseConfig,
   output: 'standalone',
 };
+
+export default nextConfig;

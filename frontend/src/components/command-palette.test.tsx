@@ -2,7 +2,6 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { CommandPalette } from "./command-palette";
 import { I18nProvider } from "@/lib/i18n";
-import * as api from "@/lib/api";
 
 // Mock next/navigation
 vi.mock("next/navigation", () => ({

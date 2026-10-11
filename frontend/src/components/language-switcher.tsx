@@ -24,13 +24,11 @@ import { cn } from "@/lib/utils";
 interface LanguageSwitcherProps {
   variant?: "dropdown" | "select" | "toggle" | "button";
   className?: string;
-  showLabel?: boolean;
 }
 
 export function LanguageSwitcher({
   variant = "dropdown",
   className,
-  showLabel = true,
 }: LanguageSwitcherProps) {
   const { language, setLanguage, t } = useI18n();
 

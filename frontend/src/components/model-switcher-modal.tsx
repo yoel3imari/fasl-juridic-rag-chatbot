@@ -199,10 +199,10 @@ export function ModelSwitcherModal({
         ...(activeBaseUrl ? { base_url: activeBaseUrl } : {}),
       });
       setTestResult(result);
-    } catch (err: any) {
+    } catch (err) {
       setTestResult({
         success: false,
-        message: err.message || "Failed to reach backend test endpoint",
+        message: err instanceof Error ? err.message : "Failed to reach backend test endpoint",
       });
     } finally {
       setTesting(false);

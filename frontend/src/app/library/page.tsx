@@ -29,7 +29,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { UploadLibraryModal } from "@/components/upload-library-modal";
-import { Plus, Upload } from "lucide-react";
+import { Plus } from "lucide-react";
 
 export default function LibraryPage() {
   const { t, isRTL } = useI18n();

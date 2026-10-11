@@ -18,7 +18,6 @@ import { ModelSwitcherModal } from "./model-switcher-modal";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  Send,
   Square,
   Sparkles,
   AlertCircle,

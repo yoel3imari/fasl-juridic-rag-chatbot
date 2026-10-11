@@ -6,7 +6,7 @@
  * from e2e/seed_test_authority.py (source E2E-TEST-LIBRARY — synthetic
  * plumbing proof, NOT legal content; task 3 awaits real curated files).
  */
-import { expect, test } from "@playwright/test";
+import { expect, test, type APIRequestContext } from "@playwright/test";
 
 const API = "http://localhost:8000";
 
@@ -15,7 +15,7 @@ const LETTER =
   "terminated effective 2024-03-15. Your notice period is 1 month. Final " +
   "compensation of 15000 MAD will be paid. Signed by Societe Atlas SARL.";
 
-async function createMatter(request: any, title: string): Promise<number> {
+async function createMatter(request: APIRequestContext, title: string): Promise<number> {
   const res = await request.post(`${API}/api/v1/matters`, {
     data: {
       title,
