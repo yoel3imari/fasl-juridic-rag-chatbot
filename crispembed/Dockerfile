@@ -4,8 +4,11 @@
 # the /models volume on first boot, so restarts are fast.
 # Bases pinned to immutable debian digest; source pinned to v0.17.11
 # (commit 3a54506d23dd079e6a3a3825518492e38debf83a) for reproducibility.
-# Resolved via `git ls-remote --tags ... | grep 'refs/tags/v0.17.11$'`:
-# tag object ff3356ec7f09ac78dac7c8204b6c958822da1787 -> commit 3a54506d.
+# NOTE: upstream rewrote history and re-pointed refs/tags/v0.17.11 to a
+# different commit (dfff1cfd), so the pinned SHA is no longer advertised by
+# any ref — `clone && checkout` fails with "reference is not a tree".
+# The object is still reachable server-side, so fetch it by SHA directly
+# (verified: `git fetch --depth 1 origin <sha>` succeeds).
 FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171 AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -13,7 +16,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
-RUN git clone https://github.com/CrispStrobe/CrispEmbed . && git checkout 3a54506d23dd079e6a3a3825518492e38debf83a && git submodule update --init --recursive
+RUN git init . \
+    && git remote add origin https://github.com/CrispStrobe/CrispEmbed \
+    && git fetch --depth 1 origin 3a54506d23dd079e6a3a3825518492e38debf83a \
+    && git checkout FETCH_HEAD \
+    && git submodule update --init --recursive
 RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
     && cmake --build build -j"$(nproc)" --target crispembed-server
 
